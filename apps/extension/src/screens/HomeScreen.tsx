@@ -1,12 +1,7 @@
 import { AvatarGlyph } from "@/components/AvatarGlyph";
 import { Logo } from "@/components/Logo";
+import { STREAMING_SERVICES } from "@/lib/streaming-services";
 import { useAuthStore } from "@/stores/auth-store";
-
-const SERVICES = [
-  { name: "YouTube", href: "https://www.youtube.com", icon: "/static/services/youtube.svg" },
-  { name: "Spotify", href: "https://www.spotify.com", icon: "/static/services/spotify.svg" },
-  { name: "Netflix", href: "https://www.netflix.com", icon: "/static/services/netflix.svg" },
-] as const;
 
 export default function HomeScreen({
   onOpenProfile,
@@ -50,7 +45,7 @@ export default function HomeScreen({
           Streaming services
         </div>
         <div className="flex flex-col gap-2">
-          {SERVICES.map((service) => (
+          {STREAMING_SERVICES.map((service) => (
             <a
               key={service.name}
               href={service.href}

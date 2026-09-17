@@ -1,4 +1,6 @@
 import {
+  createRoom as createRoomRequest,
+  createRoomResponse,
   errorResponse,
   meResponse,
   onboarding as onboardingRequest,
@@ -69,5 +71,11 @@ export const api = {
     request("/api/v1/me/onboarding", onboardingResponse, {
       method: "POST",
       body: JSON.stringify(onboardingRequest.parse(input)),
+    }),
+
+  createRoom: (input: z.infer<typeof createRoomRequest>) =>
+    request("/api/v1/rooms", createRoomResponse, {
+      method: "POST",
+      body: JSON.stringify(createRoomRequest.parse(input)),
     }),
 };

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { browser } from "wxt/browser";
 
+import { useDetectedStreamingTab } from "@/hooks/useDetectedStreamingTab";
 import HomeScreen from "@/screens/HomeScreen";
 import HowItWorksScreen from "@/screens/HowItWorksScreen";
 import LoginScreen from "@/screens/LoginScreen";
 import OnboardingScreen from "@/screens/OnboardingScreen";
+import PartySetupScreen from "@/screens/PartySetupScreen";
 import ProfileScreen from "@/screens/ProfileScreen";
 import SignupScreen from "@/screens/SignupScreen";
 import { useAuthStore } from "@/stores/auth-store";
@@ -32,10 +34,16 @@ async function openServiceInSidePanel(href: string) {
   await browser.sidePanel.open({ tabId: tab.id });
 }
 
+// "auto" defers to the currently detected tab (party setup on a supported
+// streaming site, Home otherwise). Explicit pages are user navigation and
+// take priority over that detection until the user backs out again.
+type Page = "auto" | "home" | "profile" | "how-it-works";
+
 export default function App() {
   const { status, hydrate } = useAuthStore();
   const [authView, setAuthView] = useState<"login" | "signup">("login");
-  const [page, setPage] = useState<"home" | "profile" | "how-it-works">("home");
+  const [page, setPage] = useState<Page>("auto");
+  const detected = useDetectedStreamingTab();
   const openedVerificationTab = useRef(false);
 
   useEffect(() => {
@@ -71,10 +79,10 @@ export default function App() {
   } else if (status === "needs-onboarding") {
     content = <OnboardingScreen />;
   } else if (page === "profile") {
-    content = <ProfileScreen onBack={() => setPage("home")} />;
+    content = <ProfileScreen onBack={() => setPage("auto")} />;
   } else if (page === "how-it-works") {
-    content = <HowItWorksScreen onBack={() => setPage("home")} />;
-  } else {
+    content = <HowItWorksScreen onBack={() => setPage("auto")} />;
+  } else if (page === "home" || detected === null) {
     content = (
       <HomeScreen
         onOpenProfile={() => setPage("profile")}
@@ -82,13 +90,25 @@ export default function App() {
         onOpenHowItWorks={() => setPage("how-it-works")}
       />
     );
+  } else if (detected === "loading") {
+    content = null;
+  } else {
+    content = (
+      <PartySetupScreen
+        service={detected.service}
+        tabTitle={detected.title}
+        tabUrl={detected.url}
+        onBack={() => setPage("home")}
+      />
+    );
   }
 
+  const resolvedView = page === "auto" ? (detected === "loading" ? "loading" : detected ? "party-setup" : "home") : page;
   const viewKey =
     status === "signed-out"
       ? `signed-out-${authView}`
       : status === "ready"
-        ? `ready-${page}`
+        ? `ready-${resolvedView}`
         : status;
 
   return (

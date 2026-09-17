@@ -9,6 +9,10 @@ export default defineConfig({
     description:
       "Watch parties in sync — shared playback, live chat, and calls without leaving YouTube.",
     permissions: ["storage"],
-    host_permissions: ["https://www.youtube.com/*"],
+    host_permissions: [
+      "https://www.youtube.com/*",
+      "https://www.spotify.com/*",
+      "https://www.netflix.com/*",
+    ],
   },
 });
