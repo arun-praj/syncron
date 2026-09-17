@@ -3,6 +3,12 @@ import { browser } from "wxt/browser";
 import type { TokenStorage } from "@/src/services/token-storage";
 
 const STORAGE_KEY = "syncron:auth-token";
+const PENDING_VERIFICATION_KEY = "syncron:pending-verification";
+
+export interface PendingVerification {
+  email: string;
+  expiresAt: number;
+}
 
 // chrome.storage.local: persists across browser restarts (standard "stay
 // signed in" UX), isolated per-extension by the browser, cleared on
@@ -22,4 +28,22 @@ export function createLocalTokenStorage(): TokenStorage {
       await browser.storage.local.remove(STORAGE_KEY);
     },
   };
+}
+
+export async function getPendingVerification(): Promise<PendingVerification | null> {
+  const stored = await browser.storage.local.get(PENDING_VERIFICATION_KEY);
+  const value = stored[PENDING_VERIFICATION_KEY];
+  if (!value || typeof value !== "object") return null;
+  const { email, expiresAt } = value as Partial<PendingVerification>;
+  return typeof email === "string" && typeof expiresAt === "number"
+    ? { email, expiresAt }
+    : null;
+}
+
+export function setPendingVerification(value: PendingVerification): Promise<void> {
+  return browser.storage.local.set({ [PENDING_VERIFICATION_KEY]: value });
+}
+
+export function clearPendingVerification(): Promise<void> {
+  return browser.storage.local.remove(PENDING_VERIFICATION_KEY);
 }

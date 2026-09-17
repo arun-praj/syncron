@@ -57,7 +57,10 @@ export function createAuth(
     baseURL: c.BETTER_AUTH_URL,
     secret: c.BETTER_AUTH_SECRET,
     basePath: "/api/auth",
-    trustedOrigins: c.TRUSTED_ORIGINS.split(",").map((v) => v.trim()),
+    trustedOrigins:
+      c.NODE_ENV === "development"
+        ? ["*"]
+        : c.TRUSTED_ORIGINS.split(",").map((v) => v.trim()),
     database: drizzleAdapter(db, { provider: "sqlite", schema: tables }),
     emailAndPassword: {
       enabled: true,

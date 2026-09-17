@@ -10,7 +10,13 @@ import { useAuthStore } from "@/src/stores/auth-store";
 
 type Step = "sign-in" | "request-reset" | "reset";
 
-export default function LoginScreen({ onSwitchToSignup }: { onSwitchToSignup: () => void }) {
+export default function LoginScreen({
+  onSwitchToSignup,
+  initialEmail = "",
+}: {
+  onSwitchToSignup: () => void;
+  initialEmail?: string;
+}) {
   const { signIn, requestPasswordReset, resetPassword, submitting, error, clearError } =
     useAuthStore();
   const [showPw, setShowPw] = useState(false);
@@ -20,7 +26,7 @@ export default function LoginScreen({ onSwitchToSignup }: { onSwitchToSignup: ()
 
   if (step !== "sign-in") {
     return (
-      <div className="flex flex-col items-center px-[22px] pb-[18px] pt-[26px]">
+      <div key={step} className="motion-screen flex flex-col items-center px-[22px] pb-[18px] pt-[26px]">
         <div className="mb-5">
           <Logo />
         </div>
@@ -90,7 +96,7 @@ export default function LoginScreen({ onSwitchToSignup }: { onSwitchToSignup: ()
   }
 
   return (
-    <div className="flex flex-col items-center px-[22px] pb-[18px] pt-[26px]">
+    <div key={step} className="motion-screen flex flex-col items-center px-[22px] pb-[18px] pt-[26px]">
       <div className="mb-5">
         <Logo />
       </div>
@@ -120,7 +126,15 @@ export default function LoginScreen({ onSwitchToSignup }: { onSwitchToSignup: ()
               password: String(form.get("password")),
             });
           }}>
-          <Input id="email" name="email" type="email" label="Email address" placeholder="you@example.com" required />
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            label="Email address"
+            placeholder="you@example.com"
+            defaultValue={initialEmail}
+            required
+          />
           <div>
             <div className="mb-[5px] flex items-center justify-between">
               <label htmlFor="password" className="text-label font-medium text-ink-label">

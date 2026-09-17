@@ -8,7 +8,7 @@ const statusStyles: Record<SyncStatus, string> = {
 
 const statusDot: Record<SyncStatus, string> = {
   synced: "bg-green-500",
-  syncing: "animate-pulse bg-amber-500",
+  syncing: "animate-[sync-pulse_1.5s_cubic-bezier(.4,0,.6,1)_infinite] bg-amber-500",
   "out-of-sync": "bg-red-500",
 };
 

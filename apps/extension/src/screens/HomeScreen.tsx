@@ -8,19 +8,29 @@ const SERVICES = [
   { name: "Netflix", href: "https://www.netflix.com", icon: "/static/services/netflix.svg" },
 ] as const;
 
-export default function HomeScreen() {
-  const { user, signOut } = useAuthStore();
+export default function HomeScreen({
+  onOpenProfile,
+  onOpenService,
+}: {
+  onOpenProfile: () => void;
+  onOpenService?: (href: string) => void;
+}) {
+  const { user } = useAuthStore();
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-[18px] py-3.5">
         <Logo />
-        <div className="flex items-center gap-1.5 rounded-full py-1 pl-2.5 pr-1">
-          <span className="text-[12.5px] font-medium text-ink-label">
+        <button
+          type="button"
+          aria-label="Open profile"
+          onClick={onOpenProfile}
+          className="group flex cursor-pointer items-center gap-1.5 rounded-full py-1 pl-2.5 pr-1 transition-colors hover:bg-neutral-50">
+          <span className="text-[12.5px] font-medium text-ink-label transition-colors group-hover:text-ink-primary group-hover:underline">
             @{user?.username ?? ""}
           </span>
           {user?.avatarId && <AvatarGlyph avatarId={user.avatarId} className="h-[26px] w-[26px]" />}
-        </div>
+        </button>
       </div>
 
       <p className="px-[18px] pb-1.5 pt-4 text-label text-ink-secondary">
@@ -38,6 +48,11 @@ export default function HomeScreen() {
               href={service.href}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={(event) => {
+                if (!onOpenService) return;
+                event.preventDefault();
+                onOpenService(service.href);
+              }}
               className="flex items-center gap-3.5 rounded-xl border border-border p-3.5 transition-colors hover:border-border-input hover:bg-neutral-50">
               <img src={service.icon} alt={service.name} className="h-10 w-10 flex-shrink-0 rounded-[10px]" />
               <span className="flex-1 text-[14.5px] font-semibold text-ink-primary">
@@ -68,19 +83,7 @@ export default function HomeScreen() {
             </span>
           </div>
         </div>
-        <p className="mt-2.5 px-0.5 text-[10px] leading-tight text-ink-placeholder">
-          Service marks are generic placeholders (icon + name), not the platforms&apos; logos —
-          swap in officially sourced brand assets under each platform&apos;s guidelines before
-          shipping.
-        </p>
       </div>
-
-      <button
-        type="button"
-        onClick={() => void signOut()}
-        className="border-t border-border px-[18px] py-3 text-center text-footer text-ink-secondary hover:text-red-600 hover:underline">
-        Sign out
-      </button>
     </div>
   );
 }

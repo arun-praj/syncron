@@ -18,6 +18,7 @@ The API defaults to port 3001. `pnpm start` runs without watching. The developme
 
 | Variable | Default / purpose |
 |---|---|
+| `NODE_ENV` | `production`; set to `development` to bypass auth/CORS origin checks locally |
 | `API_PORT` | 3001 |
 | `DATABASE_URL` | `file:./data/syncron.db`; SQLite path or file URL |
 | `APP_URL` | `http://localhost:3001`; future invite landing origin |

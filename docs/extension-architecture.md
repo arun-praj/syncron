@@ -182,6 +182,7 @@ Allowed examples:
 - non-sensitive UI preferences,
 - active room ID if needed for recovery,
 - adapter preferences,
+- pending verification email and expiry only,
 - auth/session material only as required by Better Auth's safe integration design.
 
 Never store:

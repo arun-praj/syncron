@@ -11,7 +11,7 @@ export function ParticipantTile({
 }) {
   return (
     <div
-      className={`flex flex-col items-center justify-center gap-2 rounded-2xl border bg-neutral-50 p-3 transition-shadow ${
+      className={`flex flex-col items-center justify-center gap-2 rounded-2xl border bg-neutral-50 p-3 transition-[border-color,box-shadow] duration-150 ease-standard ${
         isSpeaking ? "border-accent shadow-[0_0_0_3px_rgba(37,99,235,.15)]" : "border-border"
       }`}>
       <div

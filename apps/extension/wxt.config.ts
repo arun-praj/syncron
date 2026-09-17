@@ -16,8 +16,9 @@ export default defineConfig({
     name: "Syncron",
     description:
       "Watch parties in sync — shared playback, live chat, and calls without leaving YouTube.",
-    permissions: ["storage"],
+    permissions: ["storage", "tabs", "sidePanel"],
     host_permissions: ["https://www.youtube.com/*"],
+    side_panel: { default_path: "sidepanel.html" },
   },
   vite: () => ({
     plugins: [tailwindcss()],

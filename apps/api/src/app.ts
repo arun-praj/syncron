@@ -80,7 +80,10 @@ export async function createApp(deps: {
   app.use(
     "*",
     cors({
-      origin: config.TRUSTED_ORIGINS.split(",").map((s) => s.trim()),
+      origin:
+        config.NODE_ENV === "development"
+          ? (origin) => origin
+          : config.TRUSTED_ORIGINS.split(",").map((s) => s.trim()),
       allowHeaders: ["Content-Type", "Authorization"],
       exposeHeaders: ["set-auth-token", "X-Request-Id"],
       credentials: true,

@@ -65,7 +65,7 @@ export function ChatPanel() {
         />
         <button
           type="submit"
-          className="rounded-btn bg-gradient-to-b from-brand-top to-brand-bottom px-3 py-2 text-btn font-semibold text-white shadow-btn-primary hover:shadow-btn-primary-hover">
+          className="rounded-btn bg-gradient-to-b from-brand-top to-brand-bottom px-3 py-2 text-btn font-semibold text-white shadow-btn-primary transition-[box-shadow,transform] duration-200 ease-standard hover:shadow-btn-primary-hover active:scale-[0.98]">
           Send
         </button>
       </form>

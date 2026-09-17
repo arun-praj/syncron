@@ -45,12 +45,47 @@
   --text-divider--letter-spacing: 0.05em;
   --text-footer: 12.5px;
   --text-footer--line-height: 1.4;
+
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
 }
 
 @layer base {
   html,
   body {
     font-family: var(--font-sans);
+  }
+}
+
+@keyframes screen-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sync-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.motion-screen {
+  animation: screen-enter var(--duration-base) var(--ease-standard) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

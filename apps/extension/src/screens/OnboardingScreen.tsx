@@ -62,7 +62,7 @@ export default function OnboardingScreen() {
               type="button"
               aria-label={`Avatar ${id}`}
               onClick={() => setSelectedAvatar(id)}
-              className={`aspect-square w-full max-w-[38px] rounded-full border-2 bg-neutral-100 transition-colors ${
+              className={`aspect-square w-full max-w-[38px] rounded-full border-2 bg-neutral-100 transition-[border-color,box-shadow,transform] duration-150 ease-standard active:scale-[0.96] ${
                 id === selectedAvatar
                   ? "border-accent shadow-[0_0_0_2px_#eff6ff]"
                   : "border-transparent"

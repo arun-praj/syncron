@@ -1,0 +1,51 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { browser } from "wxt/browser";
+
+import HomeScreen from "@/src/screens/HomeScreen";
+import OnboardingScreen from "@/src/screens/OnboardingScreen";
+import ProfileScreen from "@/src/screens/ProfileScreen";
+import { useAuthStore } from "@/src/stores/auth-store";
+
+async function openService(href: string) {
+  await browser.tabs.create({ url: href, active: true });
+}
+
+export default function App() {
+  const { status, user, bootstrap } = useAuthStore();
+  const [page, setPage] = useState<"home" | "profile">("home");
+
+  useEffect(() => {
+    void bootstrap();
+  }, []);
+
+  let content: ReactNode;
+  if (status === "loading") {
+    content = (
+      <div className="flex min-h-screen items-center justify-center text-subtext text-ink-secondary">
+        Loading…
+      </div>
+    );
+  } else if (status !== "signed-in") {
+    content = (
+      <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
+        <h1 className="text-h1 font-bold text-ink-primary">Open Syncron</h1>
+        <p className="mt-2 text-subtext text-ink-secondary">
+          Use the extension popup to sign in and continue.
+        </p>
+      </div>
+    );
+  } else if (!user?.onboardingCompletedAt) {
+    content = <OnboardingScreen />;
+  } else if (page === "profile") {
+    content = <ProfileScreen onBack={() => setPage("home")} />;
+  } else {
+    content = (
+      <HomeScreen
+        onOpenProfile={() => setPage("profile")}
+        onOpenService={(href) => void openService(href)}
+      />
+    );
+  }
+
+  return <div className="min-h-screen bg-bg font-sans">{content}</div>;
+}

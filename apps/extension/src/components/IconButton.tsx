@@ -13,7 +13,8 @@ export function IconButton({
   className = "",
   ...props
 }: IconButtonProps) {
-  const base = "flex h-10 w-10 items-center justify-center rounded-full transition-colors";
+  const base =
+    "flex h-10 w-10 items-center justify-center rounded-full transition-[background-color,box-shadow,transform] duration-150 ease-standard active:scale-[0.96] disabled:active:scale-100";
   const styles =
     variant === "danger"
       ? "bg-red-500 text-white hover:bg-red-600"

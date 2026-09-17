@@ -4,6 +4,7 @@ const secret = z
   .min(32)
   .refine((v) => !v.includes("replace-me"), "Replace placeholder secrets");
 const schema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("production"),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   DATABASE_URL: z.string().default("file:./data/syncron.db"),
   APP_URL: z.url().default("http://localhost:3001"),

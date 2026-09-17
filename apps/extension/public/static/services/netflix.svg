@@ -1,8 +1,1 @@
-<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-  <rect width="40" height="40" rx="10" fill="#f3e8ff"/>
-  <g fill="none" stroke="#9333ea" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M11 17.5L13.5 13H27L29 17.5"/>
-    <rect x="11" y="17.5" width="18" height="10" rx="1.2"/>
-    <path d="M14.5 13.3L16.5 17.5M20 13L21.5 17.5M25 13.3L26.7 17.5"/>
-  </g>
-</svg>
+<svg fill="#E50914" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>Netflix</title><path d="m5.398 0 8.348 23.602c2.346.059 4.856.398 4.856.398L10.113 0H5.398zm8.489 0v9.172l4.715 13.33V0h-4.715zM5.398 1.5V24c1.873-.225 2.81-.312 4.715-.398V14.83L5.398 1.5z"/></svg>

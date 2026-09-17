@@ -13,7 +13,7 @@ The Hono API remains the authority for Better Auth identity, onboarding, party m
 - `PATCH /api/v1/rooms/:roomId/members/:userId/microphone` is host-only. It persists the active membership microphone permission, updates the LiveKit participant grant, mutes existing microphone tracks, and broadcasts the new state.
 - LiveKit tokens grant camera publishing independently from microphone publishing. Reissued tokens preserve microphone restrictions.
 
-Google extension OAuth uses a short-lived one-time exchange code bound to an extension proof-of-possession challenge; bearer sessions never appear in redirect URLs. Trusted origins are explicit per browser/build.
+Google extension OAuth uses a short-lived one-time exchange code bound to an extension proof-of-possession challenge; bearer sessions never appear in redirect URLs. Production trusted origins are explicit per browser/build. Development bypasses origin validation only when `NODE_ENV=development`.
 
 ## Persistence boundary
 

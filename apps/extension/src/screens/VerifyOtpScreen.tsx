@@ -22,6 +22,7 @@ export default function VerifyOtpScreen({ onBack }: { onBack: () => void }) {
   const [shake, setShake] = useState(false);
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_SECONDS);
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
+  const shakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -31,6 +32,10 @@ export default function VerifyOtpScreen({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     inputs.current[0]?.focus();
+  }, []);
+
+  useEffect(() => () => {
+    if (shakeTimer.current) clearTimeout(shakeTimer.current);
   }, []);
 
   function focusFirstEmpty() {
@@ -55,8 +60,12 @@ export default function VerifyOtpScreen({ onBack }: { onBack: () => void }) {
   async function submit() {
     const code = digits.join("");
     if (code.length < OTP_LENGTH) {
+      if (shakeTimer.current) clearTimeout(shakeTimer.current);
       setShake(true);
-      setTimeout(() => setShake(false), 400);
+      shakeTimer.current = setTimeout(() => {
+        setShake(false);
+        shakeTimer.current = null;
+      }, 400);
       focusFirstEmpty();
       return;
     }
@@ -103,12 +112,12 @@ export default function VerifyOtpScreen({ onBack }: { onBack: () => void }) {
 
       <Card>
         <form
-          className={shake ? "animate-[otp-shake_0.4s]" : ""}
           onSubmit={(e) => {
             e.preventDefault();
             void submit();
           }}>
-          <div className="mb-[18px] flex justify-between gap-2">
+          <div
+            className={`mb-[18px] flex justify-between gap-2 ${shake ? "animate-[otp-shake_0.4s]" : ""}`}>
             {digits.map((digit, i) => (
               <input
                 key={i}

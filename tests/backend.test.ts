@@ -48,8 +48,16 @@ afterEach(async () => {
   for (const f of cleanup.splice(0).reverse()) await f();
   vi.restoreAllMocks();
 });
-async function setup() {
+async function setup(overrides: Record<string, string> = {}) {
   vi.spyOn(console, "log").mockImplementation(() => {});
+  const testConfig = config({
+    ...Object.fromEntries(
+      Object.entries(c)
+        .filter(([, value]) => value !== undefined)
+        .map(([key, value]) => [key, String(value)]),
+    ),
+    ...overrides,
+  });
   const dir = await mkdtemp(join(tmpdir(), "syncron-test-"));
   cleanup.push(() =>
     rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }),
@@ -62,13 +70,13 @@ async function setup() {
   const mails: Mail[] = [];
   const auth = createAuth(
     db,
-    c,
+    testConfig,
     async (m) => {
       mails.push(m);
     },
     new MemoryRateLimiter(() => now),
   );
-  const real = livekit(c);
+  const real = livekit(testConfig);
   const media = {
     ...real,
     remove: vi.fn(async () => {}),
@@ -78,7 +86,7 @@ async function setup() {
   const runtime = await createApp({
     db,
     auth,
-    config: c,
+    config: testConfig,
     media,
     now: () => now,
   });
@@ -88,12 +96,14 @@ async function setup() {
     body?: unknown,
     token?: string,
     method = body === undefined ? "GET" : "POST",
+    origin?: string,
   ) =>
     runtime.app.request(path, {
       method,
       headers: {
         ...(body === undefined ? {} : { "content-type": "application/json" }),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(origin ? { origin } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -160,6 +170,24 @@ async function setup() {
     now: () => now,
   };
 }
+
+test("development allows extension CORS origins while production restricts them", async () => {
+  const origin = "chrome-extension://development-extension";
+  const production = await setup();
+  expect(
+    (await production.request("/healthz", undefined, undefined, "OPTIONS", origin)).headers.get(
+      "access-control-allow-origin",
+    ),
+  ).toBeNull();
+
+  const development = await setup({ NODE_ENV: "development" });
+  expect(
+    (await development.request("/healthz", undefined, undefined, "OPTIONS", origin)).headers.get(
+      "access-control-allow-origin",
+    ),
+  ).toBe(origin);
+});
+
 const playback = {
   provider: "YOUTUBE",
   mediaId: "abc",
@@ -675,7 +703,7 @@ test("sliding limits enforce the whole window and control buckets refill", () =>
   expect(limiter.take("ws", 30, 1000, 60)).toBe(false);
 });
 
-test("configuration rejects partial SMTP, OAuth, weak/shared secrets and wildcard origins", () => {
+test("configuration rejects partial SMTP, OAuth and weak/shared secrets", () => {
   const env = {
     BETTER_AUTH_SECRET: c.BETTER_AUTH_SECRET,
     INVITE_SECRET: c.INVITE_SECRET,
@@ -690,8 +718,8 @@ test("configuration rejects partial SMTP, OAuth, weak/shared secrets and wildcar
   expect(() =>
     config({ ...env, INVITE_SECRET: env.BETTER_AUTH_SECRET }),
   ).toThrow();
-  expect(() => config({ ...env, TRUSTED_ORIGINS: "*" })).toThrow();
   expect(() => config({ ...env, BETTER_AUTH_SECRET: "short" })).toThrow();
+  expect(config({ ...env, NODE_ENV: "development" }).NODE_ENV).toBe("development");
   expect(
     config({
       ...env,

@@ -4,16 +4,27 @@ import { needsEmailVerification } from "@/src/auth-flow";
 import { API_BASE_URL } from "@/src/lib/env";
 import { createApiClient, type ApiClient } from "@/src/services/api-client";
 import { AuthError, createAuthServiceClient } from "@/src/services/auth-client";
-import { createLocalTokenStorage } from "@/src/services/browser-token-storage";
+import {
+  clearPendingVerification,
+  createLocalTokenStorage,
+  getPendingVerification,
+  setPendingVerification,
+} from "@/src/services/browser-token-storage";
 
 type MeUser = Awaited<ReturnType<ApiClient["me"]>>;
 
-export type AuthStatus = "loading" | "signed-out" | "awaiting-verification" | "signed-in";
+export type AuthStatus =
+  | "loading"
+  | "signed-out"
+  | "awaiting-verification"
+  | "verification-complete"
+  | "signed-in";
 
 interface AuthState {
   status: AuthStatus;
   user: MeUser | null;
   pendingEmail: string | null;
+  emailHint: string | null;
   error: string | null;
   submitting: boolean;
   bootstrap: () => Promise<void>;
@@ -29,7 +40,7 @@ interface AuthState {
   }) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
   resetPassword: (params: { email: string; otp: string; password: string }) => Promise<void>;
-  cancelVerification: () => void;
+  cancelVerification: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -37,11 +48,7 @@ const tokenStorage = createLocalTokenStorage();
 const authClient = createAuthServiceClient(API_BASE_URL, tokenStorage);
 const apiClient = createApiClient(API_BASE_URL, () => tokenStorage.get());
 
-// A signed-in-but-unverified attempt and a fresh signup both land here with
-// the password kept only in memory (never persisted) so the OTP screen can
-// silently complete sign-in right after a successful verify, instead of
-// forcing the user to retype their password.
-let pendingPassword: string | null = null;
+const VERIFICATION_TTL_MS = 5 * 60 * 1000;
 
 function describeError(error: unknown): string {
   if (error instanceof AuthError) return error.message;
@@ -53,18 +60,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   status: "loading",
   user: null,
   pendingEmail: null,
+  emailHint: null,
   error: null,
   submitting: false,
 
   async bootstrap() {
     const token = await tokenStorage.get();
     if (!token) {
-      set({ status: "signed-out" });
+      const pending = await getPendingVerification();
+      if (pending && pending.expiresAt > Date.now()) {
+        set({ status: "awaiting-verification", pendingEmail: pending.email });
+      } else {
+        if (pending) await clearPendingVerification();
+        set({ status: "signed-out" });
+      }
       return;
     }
     try {
       const user = await apiClient.me();
-      set({ status: "signed-in", user });
+      set({ status: "signed-in", user, emailHint: null });
     } catch {
       await tokenStorage.clear();
       set({ status: "signed-out" });
@@ -75,7 +89,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ submitting: true, error: null });
     try {
       await authClient.signUp({ email, password, name });
-      pendingPassword = password;
+      await setPendingVerification({ email, expiresAt: Date.now() + VERIFICATION_TTL_MS });
       set({ status: "awaiting-verification", pendingEmail: email });
     } catch (error) {
       set({ error: describeError(error) });
@@ -89,11 +103,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await authClient.signIn({ email, password });
       const user = await apiClient.me();
-      set({ status: "signed-in", user });
+      await clearPendingVerification();
+      set({ status: "signed-in", user, emailHint: null });
     } catch (error) {
       if (error instanceof AuthError && needsEmailVerification(error.code)) {
-        pendingPassword = password;
-        set({ status: "awaiting-verification", pendingEmail: email });
+        try {
+          const pending = await getPendingVerification();
+          if (!pending || pending.email !== email || pending.expiresAt <= Date.now()) {
+            await authClient.sendVerificationOtp(email);
+          }
+          await setPendingVerification({ email, expiresAt: Date.now() + VERIFICATION_TTL_MS });
+          set({ status: "awaiting-verification", pendingEmail: email });
+        } catch (resendError) {
+          set({ error: describeError(resendError) });
+        }
       } else {
         set({ error: describeError(error) });
       }
@@ -108,12 +131,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ submitting: true, error: null });
     try {
       await authClient.verifyEmailOtp({ email, otp });
-      if (pendingPassword) {
-        await authClient.signIn({ email, password: pendingPassword });
-        pendingPassword = null;
-      }
-      const user = await apiClient.me();
-      set({ status: "signed-in", user, pendingEmail: null });
+      await clearPendingVerification();
+      set({
+        status: "verification-complete",
+        user: null,
+        pendingEmail: null,
+        emailHint: email,
+      });
     } catch (error) {
       set({ error: describeError(error) });
     } finally {
@@ -127,6 +151,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ error: null });
     try {
       await authClient.sendVerificationOtp(email);
+      await setPendingVerification({ email, expiresAt: Date.now() + VERIFICATION_TTL_MS });
     } catch (error) {
       set({ error: describeError(error) });
     }
@@ -134,8 +159,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   async signOut() {
     await authClient.signOut();
-    pendingPassword = null;
-    set({ status: "signed-out", user: null, pendingEmail: null, error: null });
+    await clearPendingVerification();
+    set({ status: "signed-out", user: null, pendingEmail: null, emailHint: null, error: null });
   },
 
   async completeOnboarding(params) {
@@ -165,7 +190,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ submitting: true, error: null });
     try {
       await authClient.resetPassword(params);
-      set({ status: "signed-out" });
+      set({ status: "signed-out", emailHint: params.email });
     } catch (error) {
       set({ error: describeError(error) });
     } finally {
@@ -173,8 +198,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  cancelVerification() {
-    pendingPassword = null;
+  async cancelVerification() {
+    await clearPendingVerification();
     set({ status: "signed-out", pendingEmail: null, error: null });
   },
 
