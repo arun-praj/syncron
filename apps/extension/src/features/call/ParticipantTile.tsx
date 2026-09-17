@@ -1,4 +1,4 @@
-import type { MockUser } from "@/src/lib/mock-data";
+import type { MockUser } from "@/lib/mock-data";
 
 export function ParticipantTile({
   user,

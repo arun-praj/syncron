@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Button } from "@/src/components/Button";
-import { Card } from "@/src/components/Card";
-import { Logo } from "@/src/components/Logo";
-import { useAuthStore } from "@/src/stores/auth-store";
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { Logo } from "@/components/Logo";
+import { useAuthStore } from "@/stores/auth-store";
 
 const OTP_LENGTH = 6;
 const RESEND_COOLDOWN_SECONDS = 60;
@@ -17,7 +17,8 @@ function maskEmail(email: string): string {
 }
 
 export default function VerifyOtpScreen({ onBack }: { onBack: () => void }) {
-  const { pendingEmail, verifyOtp, resendOtp, submitting, error, clearError } = useAuthStore();
+  const { pendingEmail, verifyOtp, resendOtp, isSubmitting, error, info, clearError } =
+    useAuthStore();
   const [digits, setDigits] = useState<string[]>(Array(OTP_LENGTH).fill(""));
   const [shake, setShake] = useState(false);
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_SECONDS);
@@ -109,6 +110,7 @@ export default function VerifyOtpScreen({ onBack }: { onBack: () => void }) {
         </b>
       </p>
       <p className="mb-5 text-center text-[11px] text-ink-placeholder">Code expires in 5 minutes</p>
+      {info && <p className="mb-3 text-center text-[11px] text-accent">{info}</p>}
 
       <Card>
         <form
@@ -141,8 +143,8 @@ export default function VerifyOtpScreen({ onBack }: { onBack: () => void }) {
             ))}
           </div>
 
-          <Button type="submit" disabled={submitting}>
-            {submitting ? "Verifying…" : "Verify email"}
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Verifying…" : "Verify email"}
           </Button>
           {error && <p className="mt-2.5 text-center text-[11px] text-red-500">{error}</p>}
         </form>

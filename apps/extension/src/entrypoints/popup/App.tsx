@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { browser } from "wxt/browser";
 
-import HomeScreen from "@/src/screens/HomeScreen";
-import LoginScreen from "@/src/screens/LoginScreen";
-import OnboardingScreen from "@/src/screens/OnboardingScreen";
-import ProfileScreen from "@/src/screens/ProfileScreen";
-import SignupScreen from "@/src/screens/SignupScreen";
-import { useAuthStore } from "@/src/stores/auth-store";
+import HomeScreen from "@/screens/HomeScreen";
+import HowItWorksScreen from "@/screens/HowItWorksScreen";
+import LoginScreen from "@/screens/LoginScreen";
+import OnboardingScreen from "@/screens/OnboardingScreen";
+import ProfileScreen from "@/screens/ProfileScreen";
+import SignupScreen from "@/screens/SignupScreen";
+import { useAuthStore } from "@/stores/auth-store";
 
 async function openVerificationTab() {
   const url = browser.runtime.getURL("/verify.html");
@@ -32,17 +33,17 @@ async function openServiceInSidePanel(href: string) {
 }
 
 export default function App() {
-  const { status, user, bootstrap } = useAuthStore();
+  const { status, hydrate } = useAuthStore();
   const [authView, setAuthView] = useState<"login" | "signup">("login");
-  const [page, setPage] = useState<"home" | "profile">("home");
+  const [page, setPage] = useState<"home" | "profile" | "how-it-works">("home");
   const openedVerificationTab = useRef(false);
 
   useEffect(() => {
-    void bootstrap();
+    void hydrate();
   }, []);
 
   useEffect(() => {
-    if (status !== "awaiting-verification" || openedVerificationTab.current) return;
+    if (status !== "needs-verification" || openedVerificationTab.current) return;
     openedVerificationTab.current = true;
     void openVerificationTab().then(() => window.close());
   }, [status]);
@@ -61,21 +62,24 @@ export default function App() {
       ) : (
         <SignupScreen onSwitchToLogin={() => setAuthView("login")} />
       );
-  } else if (status === "awaiting-verification") {
+  } else if (status === "needs-verification") {
     content = (
       <div className="flex h-full items-center justify-center px-8 text-center text-subtext text-ink-secondary">
         Opening email verification…
       </div>
     );
-  } else if (!user?.onboardingCompletedAt) {
+  } else if (status === "needs-onboarding") {
     content = <OnboardingScreen />;
   } else if (page === "profile") {
     content = <ProfileScreen onBack={() => setPage("home")} />;
+  } else if (page === "how-it-works") {
+    content = <HowItWorksScreen onBack={() => setPage("home")} />;
   } else {
     content = (
       <HomeScreen
         onOpenProfile={() => setPage("profile")}
         onOpenService={(href) => void openServiceInSidePanel(href)}
+        onOpenHowItWorks={() => setPage("how-it-works")}
       />
     );
   }
@@ -83,8 +87,8 @@ export default function App() {
   const viewKey =
     status === "signed-out"
       ? `signed-out-${authView}`
-      : status === "signed-in"
-        ? `signed-in-${page}`
+      : status === "ready"
+        ? `ready-${page}`
         : status;
 
   return (

@@ -1,209 +1,261 @@
 import { create } from "zustand";
+import type { z } from "zod";
+import type {
+  onboarding as onboardingRequestSchema,
+  profileUpdate as profileUpdateSchema,
+} from "@syncron/protocol";
 
-import { needsEmailVerification } from "@/src/auth-flow";
-import { API_BASE_URL } from "@/src/lib/env";
-import { createApiClient, type ApiClient } from "@/src/services/api-client";
-import { AuthError, createAuthServiceClient } from "@/src/services/auth-client";
-import {
-  clearPendingVerification,
-  createLocalTokenStorage,
-  getPendingVerification,
-  setPendingVerification,
-} from "@/src/services/browser-token-storage";
-
-type MeUser = Awaited<ReturnType<ApiClient["me"]>>;
+import { authErrorMessage, needsEmailVerification } from "~/auth-flow";
+import { authClient, clearStoredSession, getStoredToken } from "~/services/auth/client";
+import { api, ApiError } from "~/services/api/client";
 
 export type AuthStatus =
   | "loading"
   | "signed-out"
-  | "awaiting-verification"
-  | "verification-complete"
-  | "signed-in";
+  | "needs-verification"
+  | "needs-onboarding"
+  | "ready";
+
+export interface SyncronUser {
+  id: string;
+  username: string;
+  avatarId: string | null;
+  displayName: string;
+  image: string | null;
+  email: string;
+  emailVerified: boolean;
+  createdAt: string;
+  onboardingCompletedAt: string | null;
+}
 
 interface AuthState {
   status: AuthStatus;
-  user: MeUser | null;
+  user: SyncronUser | null;
   pendingEmail: string | null;
-  emailHint: string | null;
   error: string | null;
-  submitting: boolean;
-  bootstrap: () => Promise<void>;
-  signUp: (params: { email: string; password: string; name: string }) => Promise<void>;
-  signIn: (params: { email: string; password: string }) => Promise<void>;
+  info: string | null;
+  isSubmitting: boolean;
+
+  hydrate: () => Promise<void>;
+  signUp: (input: { name: string; email: string; password: string }) => Promise<void>;
+  signIn: (input: { email: string; password: string }) => Promise<void>;
   verifyOtp: (otp: string) => Promise<void>;
   resendOtp: () => Promise<void>;
+  completeOnboarding: (
+    input: z.infer<typeof onboardingRequestSchema>,
+  ) => Promise<void>;
+  updateProfile: (input: z.infer<typeof profileUpdateSchema>) => Promise<void>;
   signOut: () => Promise<void>;
-  completeOnboarding: (params: {
-    username: string;
-    avatarId: string;
-    displayName?: string;
-  }) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
-  resetPassword: (params: { email: string; otp: string; password: string }) => Promise<void>;
-  cancelVerification: () => Promise<void>;
+  resetPassword: (input: { email: string; otp: string; password: string }) => Promise<void>;
   clearError: () => void;
+  backToSignIn: () => void;
 }
 
-const tokenStorage = createLocalTokenStorage();
-const authClient = createAuthServiceClient(API_BASE_URL, tokenStorage);
-const apiClient = createApiClient(API_BASE_URL, () => tokenStorage.get());
+// A password never touches extension storage, ever — it's held in a
+// closure variable (not even component/store state) only for the brief
+// window between OTP verification and the sign-in call that follows it,
+// mirroring the exact sequence validated in scripts/docker-smoke.ts.
+// Better Auth's verify-email response can include its own session token,
+// but relying on the explicitly proven sign-up -> verify -> sign-in chain
+// is the safer bet here since that's the one actually exercised against a
+// live backend.
+let pendingPassword: string | null = null;
 
-const VERIFICATION_TTL_MS = 5 * 60 * 1000;
-
-function describeError(error: unknown): string {
-  if (error instanceof AuthError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Something went wrong. Please try again.";
+function statusFor(user: SyncronUser): AuthStatus {
+  return user.onboardingCompletedAt ? "ready" : "needs-onboarding";
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   status: "loading",
   user: null,
   pendingEmail: null,
-  emailHint: null,
   error: null,
-  submitting: false,
+  info: null,
+  isSubmitting: false,
 
-  async bootstrap() {
-    const token = await tokenStorage.get();
+  clearError: () => set({ error: null, info: null }),
+
+  backToSignIn: () => {
+    pendingPassword = null;
+    set({ status: "signed-out", pendingEmail: null, error: null, info: null });
+  },
+
+  hydrate: async () => {
+    const token = await getStoredToken();
     if (!token) {
-      const pending = await getPendingVerification();
-      if (pending && pending.expiresAt > Date.now()) {
-        set({ status: "awaiting-verification", pendingEmail: pending.email });
-      } else {
-        if (pending) await clearPendingVerification();
-        set({ status: "signed-out" });
-      }
+      set({ status: "signed-out" });
       return;
     }
     try {
-      const user = await apiClient.me();
-      set({ status: "signed-in", user, emailHint: null });
+      const { user } = await api.me();
+      set({ status: statusFor(user), user });
     } catch {
-      await tokenStorage.clear();
+      await clearStoredSession();
       set({ status: "signed-out" });
     }
   },
 
-  async signUp({ email, password, name }) {
-    set({ submitting: true, error: null });
-    try {
-      await authClient.signUp({ email, password, name });
-      await setPendingVerification({ email, expiresAt: Date.now() + VERIFICATION_TTL_MS });
-      set({ status: "awaiting-verification", pendingEmail: email });
-    } catch (error) {
-      set({ error: describeError(error) });
-    } finally {
-      set({ submitting: false });
+  signUp: async ({ name, email, password }) => {
+    set({ isSubmitting: true, error: null, info: null });
+    const { error } = await authClient.signUp.email({ name, email, password });
+    set({ isSubmitting: false });
+    if (error) {
+      set({ error: authErrorMessage(error) });
+      return;
     }
+    pendingPassword = password;
+    set({ status: "needs-verification", pendingEmail: email });
   },
 
-  async signIn({ email, password }) {
-    set({ submitting: true, error: null });
-    try {
-      await authClient.signIn({ email, password });
-      const user = await apiClient.me();
-      await clearPendingVerification();
-      set({ status: "signed-in", user, emailHint: null });
-    } catch (error) {
-      if (error instanceof AuthError && needsEmailVerification(error.code)) {
-        try {
-          const pending = await getPendingVerification();
-          if (!pending || pending.email !== email || pending.expiresAt <= Date.now()) {
-            await authClient.sendVerificationOtp(email);
-          }
-          await setPendingVerification({ email, expiresAt: Date.now() + VERIFICATION_TTL_MS });
-          set({ status: "awaiting-verification", pendingEmail: email });
-        } catch (resendError) {
-          set({ error: describeError(resendError) });
-        }
-      } else {
-        set({ error: describeError(error) });
+  signIn: async ({ email, password }) => {
+    set({ isSubmitting: true, error: null, info: null });
+    const { error } = await authClient.signIn.email({ email, password });
+    if (error) {
+      if (needsEmailVerification(error.code)) {
+        pendingPassword = password;
+        await authClient.emailOtp.sendVerificationOtp({
+          email,
+          type: "email-verification",
+        });
+        set({
+          isSubmitting: false,
+          status: "needs-verification",
+          pendingEmail: email,
+          info: "Your email isn't verified yet. We just sent you a new code.",
+        });
+        return;
       }
-    } finally {
-      set({ submitting: false });
+      set({ isSubmitting: false, error: authErrorMessage(error) });
+      return;
+    }
+    try {
+      const { user } = await api.me();
+      set({ isSubmitting: false, status: statusFor(user), user });
+    } catch (e) {
+      set({
+        isSubmitting: false,
+        error: e instanceof ApiError ? authErrorMessage(e) : authErrorMessage(null),
+      });
     }
   },
 
-  async verifyOtp(otp) {
+  verifyOtp: async (otp) => {
     const email = get().pendingEmail;
     if (!email) return;
-    set({ submitting: true, error: null });
+    set({ isSubmitting: true, error: null, info: null });
+    const { error } = await authClient.emailOtp.verifyEmail({ email, otp });
+    if (error) {
+      set({ isSubmitting: false, error: authErrorMessage(error) });
+      return;
+    }
+    const password = pendingPassword;
+    pendingPassword = null;
+    if (!password) {
+      // Reached verification without a password in memory (e.g. popup was
+      // closed and reopened mid-flow) — send the user back to sign in
+      // normally now that their email is verified.
+      set({ isSubmitting: false, status: "signed-out", pendingEmail: null });
+      return;
+    }
+    const { error: signInError } = await authClient.signIn.email({ email, password });
+    if (signInError) {
+      set({ isSubmitting: false, error: authErrorMessage(signInError) });
+      return;
+    }
     try {
-      await authClient.verifyEmailOtp({ email, otp });
-      await clearPendingVerification();
+      const { user } = await api.me();
+      set({ isSubmitting: false, status: statusFor(user), user, pendingEmail: null });
+    } catch (e) {
       set({
-        status: "verification-complete",
+        isSubmitting: false,
+        error: e instanceof ApiError ? authErrorMessage(e) : authErrorMessage(null),
+      });
+    }
+  },
+
+  resendOtp: async () => {
+    const email = get().pendingEmail;
+    if (!email) return;
+    set({ isSubmitting: true, error: null, info: null });
+    const { error } = await authClient.emailOtp.sendVerificationOtp({
+      email,
+      type: "email-verification",
+    });
+    set({
+      isSubmitting: false,
+      error: error ? authErrorMessage(error) : null,
+      info: error ? null : "We sent a new code.",
+    });
+  },
+
+  completeOnboarding: async (input) => {
+    set({ isSubmitting: true, error: null, info: null });
+    try {
+      const { user } = await api.completeOnboarding(input);
+      set({ isSubmitting: false, status: statusFor(user), user });
+    } catch (e) {
+      set({
+        isSubmitting: false,
+        error: e instanceof ApiError ? authErrorMessage(e) : authErrorMessage(null),
+      });
+    }
+  },
+
+  updateProfile: async (input) => {
+    set({ isSubmitting: true, error: null, info: null });
+    try {
+      const { user } = await api.updateMe(input);
+      set({ isSubmitting: false, user });
+    } catch (e) {
+      set({
+        isSubmitting: false,
+        error: e instanceof ApiError ? authErrorMessage(e) : authErrorMessage(null),
+      });
+      throw e;
+    }
+  },
+
+  signOut: async () => {
+    set({ isSubmitting: true });
+    try {
+      await authClient.signOut();
+    } finally {
+      await clearStoredSession();
+      pendingPassword = null;
+      set({
+        isSubmitting: false,
+        status: "signed-out",
         user: null,
         pendingEmail: null,
-        emailHint: email,
+        error: null,
+        info: null,
       });
-    } catch (error) {
-      set({ error: describeError(error) });
-    } finally {
-      set({ submitting: false });
     }
   },
 
-  async resendOtp() {
-    const email = get().pendingEmail;
-    if (!email) return;
-    set({ error: null });
-    try {
-      await authClient.sendVerificationOtp(email);
-      await setPendingVerification({ email, expiresAt: Date.now() + VERIFICATION_TTL_MS });
-    } catch (error) {
-      set({ error: describeError(error) });
+  // docs/backend-development.md's documented recovery flow: request an
+  // email-OTP-based reset, then submit the code + new password. Password
+  // reset revokes existing sessions server-side, so send the user back to
+  // sign in with their new password rather than trying to re-hydrate.
+  requestPasswordReset: async (email) => {
+    set({ isSubmitting: true, error: null, info: null });
+    const { error } = await authClient.emailOtp.requestPasswordReset({ email });
+    set({
+      isSubmitting: false,
+      error: error ? authErrorMessage(error) : null,
+      info: error ? null : "We sent a password reset code.",
+    });
+  },
+
+  resetPassword: async ({ email, otp, password }) => {
+    set({ isSubmitting: true, error: null, info: null });
+    const { error } = await authClient.emailOtp.resetPassword({ email, otp, password });
+    set({ isSubmitting: false });
+    if (error) {
+      set({ error: authErrorMessage(error) });
+      return;
     }
-  },
-
-  async signOut() {
-    await authClient.signOut();
-    await clearPendingVerification();
-    set({ status: "signed-out", user: null, pendingEmail: null, emailHint: null, error: null });
-  },
-
-  async completeOnboarding(params) {
-    set({ submitting: true, error: null });
-    try {
-      const user = await apiClient.completeOnboarding(params);
-      set({ user });
-    } catch (error) {
-      set({ error: describeError(error) });
-    } finally {
-      set({ submitting: false });
-    }
-  },
-
-  async requestPasswordReset(email) {
-    set({ submitting: true, error: null });
-    try {
-      await authClient.requestPasswordReset(email);
-    } catch (error) {
-      set({ error: describeError(error) });
-    } finally {
-      set({ submitting: false });
-    }
-  },
-
-  async resetPassword(params) {
-    set({ submitting: true, error: null });
-    try {
-      await authClient.resetPassword(params);
-      set({ status: "signed-out", emailHint: params.email });
-    } catch (error) {
-      set({ error: describeError(error) });
-    } finally {
-      set({ submitting: false });
-    }
-  },
-
-  async cancelVerification() {
-    await clearPendingVerification();
-    set({ status: "signed-out", pendingEmail: null, error: null });
-  },
-
-  clearError() {
-    set({ error: null });
+    set({ status: "signed-out", info: "Password updated. Sign in with your new password." });
   },
 }));

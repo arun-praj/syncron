@@ -1,4 +1,4 @@
-import type { MockMessage } from "@/src/lib/mock-data";
+import type { MockMessage } from "@/lib/mock-data";
 
 export function ChatMessage({
   message,

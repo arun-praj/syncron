@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 
-import { username as usernameSchema } from "../../../../packages/validation/src/index.js";
+import { username as usernameSchema } from "@syncron/validation";
 
-import { AVATAR_IDS, AvatarGlyph } from "@/src/components/AvatarGlyph";
-import { Button } from "@/src/components/Button";
-import { Card } from "@/src/components/Card";
-import { Logo } from "@/src/components/Logo";
-import { useAuthStore } from "@/src/stores/auth-store";
+import { AVATAR_IDS, AvatarGlyph } from "@/components/AvatarGlyph";
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { Logo } from "@/components/Logo";
+import { useAuthStore } from "@/stores/auth-store";
 
 const DEFAULT_MESSAGE = "3–32 characters: letters, numbers, underscores, periods.";
 
@@ -21,7 +21,7 @@ function validateUsername(raw: string): string | null {
 }
 
 export default function OnboardingScreen() {
-  const { completeOnboarding, submitting, error } = useAuthStore();
+  const { completeOnboarding, isSubmitting, error } = useAuthStore();
   const [selectedAvatar, setSelectedAvatar] = useState(
     () => AVATAR_IDS[Math.floor(Math.random() * AVATAR_IDS.length)]!,
   );
@@ -107,11 +107,11 @@ export default function OnboardingScreen() {
         <Button
           type="button"
           className="mt-2.5"
-          disabled={submitting || !!validateUsername(username)}
+          disabled={isSubmitting || !!validateUsername(username)}
           onClick={() =>
             void completeOnboarding({ username: username.trim().toLowerCase(), avatarId: selectedAvatar })
           }>
-          {submitting ? "Saving…" : "Continue"}
+          {isSubmitting ? "Saving…" : "Continue"}
         </Button>
       </Card>
     </div>

@@ -1,15 +1,15 @@
 import { useState } from "react";
 
-import { Button } from "@/src/components/Button";
-import { Card } from "@/src/components/Card";
-import { Divider } from "@/src/components/Divider";
-import { GoogleIcon } from "@/src/components/icons";
-import { Input } from "@/src/components/Input";
-import { Logo } from "@/src/components/Logo";
-import { useAuthStore } from "@/src/stores/auth-store";
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { Divider } from "@/components/Divider";
+import { GoogleIcon } from "@/components/icons";
+import { Input } from "@/components/Input";
+import { Logo } from "@/components/Logo";
+import { useAuthStore } from "@/stores/auth-store";
 
 export default function SignupScreen({ onSwitchToLogin }: { onSwitchToLogin: () => void }) {
-  const { signUp, submitting, error, clearError } = useAuthStore();
+  const { signUp, isSubmitting, error, clearError } = useAuthStore();
   const [showPw, setShowPw] = useState(false);
 
   return (
@@ -71,8 +71,8 @@ export default function SignupScreen({ onSwitchToLogin }: { onSwitchToLogin: () 
             }
           />
           {error && <p className="text-[11px] text-red-500">{error}</p>}
-          <Button type="submit" disabled={submitting}>
-            {submitting ? "Creating account…" : "Create account"}
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Creating account…" : "Create account"}
           </Button>
         </form>
       </Card>

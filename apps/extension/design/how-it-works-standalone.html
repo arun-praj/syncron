@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Syncron — How it works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:#f4f4f5;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;}
+  .popup{width:400px;height:600px;overflow-y:auto;background:#fff;box-shadow:0 0 0 1px #e4e4e7,0 20px 40px rgba(0,0,0,.08);display:flex;flex-direction:column;}
+  .header{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid #ececec;flex-shrink:0;}
+  .back{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;color:#3f3f46;text-decoration:none;transition:background .15s ease;}
+  .back:hover{background:#f4f4f5;}
+  .header span{font-weight:700;font-size:14px;color:#0a0a0a;letter-spacing:-0.01em;}
+  .content{padding:22px 20px 24px;flex:1;}
+  .intro{margin:0 0 22px;font-size:12.5px;color:#737373;line-height:1.5;letter-spacing:-0.005em;}
+  .steps{display:flex;flex-direction:column;gap:18px;}
+  .step{display:flex;gap:14px;}
+  .step-num{width:28px;height:28px;border-radius:50%;background:#eff6ff;color:#2563eb;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .step h3{margin:0 0 4px;font-size:14px;font-weight:600;color:#0a0a0a;letter-spacing:-0.01em;}
+  .step p{margin:0;font-size:12.5px;color:#737373;line-height:1.5;letter-spacing:-0.005em;}
+  .tip{margin-top:26px;padding:14px;border-radius:12px;border:1px solid #ececec;background:#fafafa;}
+  .tip p{margin:0;font-size:12px;color:#52525b;line-height:1.5;letter-spacing:-0.005em;}
+  .tip strong{color:#0a0a0a;}
+  .footer{padding:16px 20px 20px;flex-shrink:0;}
+  .cta{display:block;text-align:center;width:100%;padding:10px 14px;border-radius:6px;text-decoration:none;color:#fff;font-size:13.5px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.2);background:linear-gradient(to bottom,#3b82f6,#1d4ed8);box-shadow:0 1px 2px rgba(0,0,0,.1),inset 0 1px 0 rgba(255,255,255,.25);transition:box-shadow .2s ease;}
+  .cta:hover{box-shadow:0 1px 2px rgba(0,0,0,.1),0 3px 8px rgba(30,144,255,.5),inset 0 1px 0 rgba(255,255,255,.25);}
+</style>
+</head>
+<body>
+  <div class="popup">
+    <div class="header">
+      <a href="home-standalone.html" class="back">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </a>
+      <span>How Syncron works</span>
+    </div>
+
+    <div class="content">
+      <p class="intro">Three steps to watch anything together, perfectly in sync.</p>
+      <div class="steps" id="steps"></div>
+      <div class="tip"><p><strong>Tip:</strong> Everyone in the room needs to be logged into the same streaming service and have access to the video.</p></div>
+    </div>
+
+    <div class="footer">
+      <a href="home-standalone.html" class="cta">Got it</a>
+    </div>
+  </div>
+
+<script>
+  const STEPS = [
+    { number: 1, title: 'Open a streaming site', description: 'Start playing a video on YouTube, Netflix, or any supported service in your browser.' },
+    { number: 2, title: 'Reopen Syncron', description: 'Click the extension icon again — it detects the video and lets you start or join a room.' },
+    { number: 3, title: 'Invite your friends', description: 'Share the room link. Everyone joins the same video, perfectly in sync.' },
+    { number: 4, title: 'Watch and chat', description: 'Play, pause, and seek together — plus voice or text chat right alongside the video.' }
+  ];
+  const container = document.getElementById('steps');
+  STEPS.forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'step';
+    div.innerHTML = `<div class="step-num">${s.number}</div><div><h3>${s.title}</h3><p>${s.description}</p></div>`;
+    container.appendChild(div);
+  });
+</script>
+</body>
+</html>

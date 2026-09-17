@@ -1,21 +1,22 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { browser } from "wxt/browser";
 
-import HomeScreen from "@/src/screens/HomeScreen";
-import OnboardingScreen from "@/src/screens/OnboardingScreen";
-import ProfileScreen from "@/src/screens/ProfileScreen";
-import { useAuthStore } from "@/src/stores/auth-store";
+import HomeScreen from "@/screens/HomeScreen";
+import HowItWorksScreen from "@/screens/HowItWorksScreen";
+import OnboardingScreen from "@/screens/OnboardingScreen";
+import ProfileScreen from "@/screens/ProfileScreen";
+import { useAuthStore } from "@/stores/auth-store";
 
 async function openService(href: string) {
   await browser.tabs.create({ url: href, active: true });
 }
 
 export default function App() {
-  const { status, user, bootstrap } = useAuthStore();
-  const [page, setPage] = useState<"home" | "profile">("home");
+  const { status, hydrate } = useAuthStore();
+  const [page, setPage] = useState<"home" | "profile" | "how-it-works">("home");
 
   useEffect(() => {
-    void bootstrap();
+    void hydrate();
   }, []);
 
   let content: ReactNode;
@@ -25,7 +26,7 @@ export default function App() {
         Loading…
       </div>
     );
-  } else if (status !== "signed-in") {
+  } else if (status === "signed-out" || status === "needs-verification") {
     content = (
       <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
         <h1 className="text-h1 font-bold text-ink-primary">Open Syncron</h1>
@@ -34,15 +35,18 @@ export default function App() {
         </p>
       </div>
     );
-  } else if (!user?.onboardingCompletedAt) {
+  } else if (status === "needs-onboarding") {
     content = <OnboardingScreen />;
   } else if (page === "profile") {
     content = <ProfileScreen onBack={() => setPage("home")} />;
+  } else if (page === "how-it-works") {
+    content = <HowItWorksScreen onBack={() => setPage("home")} />;
   } else {
     content = (
       <HomeScreen
         onOpenProfile={() => setPage("profile")}
         onOpenService={(href) => void openService(href)}
+        onOpenHowItWorks={() => setPage("how-it-works")}
       />
     );
   }

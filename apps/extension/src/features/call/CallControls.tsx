@@ -1,4 +1,4 @@
-import { IconButton } from "@/src/components/IconButton";
+import { IconButton } from "@/components/IconButton";
 import {
   MicIcon,
   MicOffIcon,
@@ -6,7 +6,7 @@ import {
   ScreenShareIcon,
   VideoIcon,
   VideoOffIcon,
-} from "@/src/components/icons";
+} from "@/components/icons";
 
 interface CallControlsProps {
   muted: boolean;

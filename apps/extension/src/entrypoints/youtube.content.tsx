@@ -1,10 +1,10 @@
 import { createRoot, type Root } from "react-dom/client";
 import { useState } from "react";
 
-import { CallOverlay } from "@/src/features/call/CallOverlay";
-import { ChatPanel } from "@/src/features/chat/ChatPanel";
+import { CallOverlay } from "@/features/call/CallOverlay";
+import { ChatPanel } from "@/features/chat/ChatPanel";
 
-import "@/src/styles/app.css";
+import "@/style.css";
 
 type Tab = "chat" | "call";
 

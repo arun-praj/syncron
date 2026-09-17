@@ -1,8 +1,8 @@
 import { useEffect, type ReactNode } from "react";
 import { browser } from "wxt/browser";
 
-import VerifyOtpScreen from "@/src/screens/VerifyOtpScreen";
-import { useAuthStore } from "@/src/stores/auth-store";
+import VerifyOtpScreen from "@/screens/VerifyOtpScreen";
+import { useAuthStore } from "@/stores/auth-store";
 
 async function closeTab() {
   const tab = await browser.tabs.getCurrent();
@@ -10,10 +10,10 @@ async function closeTab() {
 }
 
 export default function App() {
-  const { status, bootstrap, cancelVerification } = useAuthStore();
+  const { status, hydrate, backToSignIn } = useAuthStore();
 
   useEffect(() => {
-    void bootstrap();
+    void hydrate();
   }, []);
 
   let content: ReactNode;
@@ -23,14 +23,14 @@ export default function App() {
         Loading…
       </div>
     );
-  } else if (status === "awaiting-verification") {
-    content = <VerifyOtpScreen onBack={() => void cancelVerification()} />;
-  } else if (status === "verification-complete") {
+  } else if (status === "needs-verification") {
+    content = <VerifyOtpScreen onBack={() => backToSignIn()} />;
+  } else if (status === "signed-out") {
     content = (
       <div className="flex min-h-screen flex-col items-center px-[22px] pb-[18px] pt-[26px] text-center">
-        <h1 className="mb-2 text-h1 font-bold text-ink-primary">Email verified</h1>
+        <h1 className="mb-2 text-h1 font-bold text-ink-primary">Open Syncron</h1>
         <p className="text-subtext text-ink-secondary">
-          Your email has been verified. Open the Syncron extension popup and sign in to continue.
+          Use the extension popup to sign in and continue.
         </p>
         <button
           type="button"
@@ -41,11 +41,14 @@ export default function App() {
       </div>
     );
   } else {
+    // "needs-onboarding" or "ready" — verify + auto sign-in already
+    // succeeded in this tab's own store instance (each extension page has
+    // its own module/store instance; only the persisted token is shared).
     content = (
       <div className="flex min-h-screen flex-col items-center px-[22px] pb-[18px] pt-[26px] text-center">
-        <h1 className="mb-2 text-h1 font-bold text-ink-primary">Open Syncron</h1>
+        <h1 className="mb-2 text-h1 font-bold text-ink-primary">Email verified</h1>
         <p className="text-subtext text-ink-secondary">
-          Use the extension popup to sign in and continue.
+          Your email has been verified. Open the Syncron extension popup to continue.
         </p>
         <button
           type="button"

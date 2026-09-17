@@ -1,12 +1,12 @@
 import { useState } from "react";
 
-import { ChatMessage } from "@/src/features/chat/ChatMessage";
+import { ChatMessage } from "@/features/chat/ChatMessage";
 import {
   mockCurrentUser,
   mockMessages,
   mockParticipants,
   type MockMessage,
-} from "@/src/lib/mock-data";
+} from "@/lib/mock-data";
 
 export function ChatPanel() {
   const [messages, setMessages] = useState<MockMessage[]>(mockMessages);

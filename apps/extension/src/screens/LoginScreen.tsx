@@ -1,12 +1,12 @@
 import { useState } from "react";
 
-import { Button } from "@/src/components/Button";
-import { Card } from "@/src/components/Card";
-import { Divider } from "@/src/components/Divider";
-import { GoogleIcon } from "@/src/components/icons";
-import { Input } from "@/src/components/Input";
-import { Logo } from "@/src/components/Logo";
-import { useAuthStore } from "@/src/stores/auth-store";
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { Divider } from "@/components/Divider";
+import { GoogleIcon } from "@/components/icons";
+import { Input } from "@/components/Input";
+import { Logo } from "@/components/Logo";
+import { useAuthStore } from "@/stores/auth-store";
 
 type Step = "sign-in" | "request-reset" | "reset";
 
@@ -17,7 +17,7 @@ export default function LoginScreen({
   onSwitchToSignup: () => void;
   initialEmail?: string;
 }) {
-  const { signIn, requestPasswordReset, resetPassword, submitting, error, clearError } =
+  const { signIn, requestPasswordReset, resetPassword, isSubmitting, error, clearError } =
     useAuthStore();
   const [showPw, setShowPw] = useState(false);
   const [step, setStep] = useState<Step>("sign-in");
@@ -59,15 +59,15 @@ export default function LoginScreen({
                 onChange={(e) => setResetEmail(e.target.value)}
               />
               {error && <p className="text-[11px] text-red-500">{error}</p>}
-              <Button type="submit" disabled={submitting}>
-                {submitting ? "Sending…" : "Send reset code"}
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Sending…" : "Send reset code"}
               </Button>
             </form>
           ) : (
             <ResetPasswordForm
               email={resetEmail}
               resent={resetSent}
-              submitting={submitting}
+              submitting={isSubmitting}
               error={error}
               onResend={async () => {
                 clearError();
@@ -167,8 +167,8 @@ export default function LoginScreen({
             />
           </div>
           {error && <p className="text-[11px] text-red-500">{error}</p>}
-          <Button type="submit" className="mt-0.5" disabled={submitting}>
-            {submitting ? "Signing in…" : "Sign in"}
+          <Button type="submit" className="mt-0.5" disabled={isSubmitting}>
+            {isSubmitting ? "Signing in…" : "Sign in"}
           </Button>
         </form>
       </Card>

@@ -17,5 +17,13 @@
     "scripts/**/*.ts",
     "*.ts"
   ],
-  "exclude": ["apps/extension/.wxt", "apps/extension/.output", "apps/extension/**/*.tsx", "apps/extension/entrypoints", "apps/extension/src"]
+  "exclude": [
+    "apps/extension/.wxt",
+    "apps/extension/.output",
+    "apps/extension/**/*.tsx",
+    "apps/extension/entrypoints",
+    "apps/extension/src",
+    "apps/extension/wxt.config.ts",
+    "apps/extension/tailwind.config.ts"
+  ]
 }

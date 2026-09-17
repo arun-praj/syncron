@@ -1,8 +1,8 @@
 import { useState } from "react";
 
-import { CallControls } from "@/src/features/call/CallControls";
-import { ParticipantTile } from "@/src/features/call/ParticipantTile";
-import { mockParticipants } from "@/src/lib/mock-data";
+import { CallControls } from "@/features/call/CallControls";
+import { ParticipantTile } from "@/features/call/ParticipantTile";
+import { mockParticipants } from "@/lib/mock-data";
 
 export function CallOverlay() {
   const [muted, setMuted] = useState(false);

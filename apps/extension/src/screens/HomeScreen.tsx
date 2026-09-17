@@ -1,6 +1,6 @@
-import { AvatarGlyph } from "@/src/components/AvatarGlyph";
-import { Logo } from "@/src/components/Logo";
-import { useAuthStore } from "@/src/stores/auth-store";
+import { AvatarGlyph } from "@/components/AvatarGlyph";
+import { Logo } from "@/components/Logo";
+import { useAuthStore } from "@/stores/auth-store";
 
 const SERVICES = [
   { name: "YouTube", href: "https://www.youtube.com", icon: "/static/services/youtube.svg" },
@@ -11,9 +11,11 @@ const SERVICES = [
 export default function HomeScreen({
   onOpenProfile,
   onOpenService,
+  onOpenHowItWorks,
 }: {
   onOpenProfile: () => void;
   onOpenService?: (href: string) => void;
+  onOpenHowItWorks: () => void;
 }) {
   const { user } = useAuthStore();
 
@@ -34,7 +36,13 @@ export default function HomeScreen({
       </div>
 
       <p className="px-[18px] pb-1.5 pt-4 text-label text-ink-secondary">
-        Start on a streaming site below, then reopen Syncron to sync up.
+        Start on a streaming site below, then reopen Syncron to sync up.{" "}
+        <button
+          type="button"
+          onClick={onOpenHowItWorks}
+          className="font-semibold text-accent hover:underline">
+          How it works
+        </button>
       </p>
 
       <div className="flex-1 px-[18px] pb-5 pt-2.5">
