@@ -3,3 +3,10 @@ node_modules/
 data/
 *.db*
 coverage/
+.plasmo/
+build/
+.env.local
+.env.*.local
+.DS_Store
+*.log
+*.tsbuildinfo
