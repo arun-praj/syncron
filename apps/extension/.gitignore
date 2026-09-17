@@ -1,6 +1,6 @@
 node_modules
-.plasmo
-build
+.wxt
+.output
 .env
 .env.local
 .env.*.local

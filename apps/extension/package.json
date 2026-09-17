@@ -1,35 +1,33 @@
 {
-  "name": "syncron",
+  "name": "@syncron/extension",
   "displayName": "Syncron",
   "version": "0.1.0",
   "description": "Watch parties in sync — shared playback, live chat, and calls without leaving YouTube.",
-  "author": "Arun Prajapati",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "plasmo dev",
-    "build": "plasmo build",
-    "package": "plasmo package"
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "postinstall": "wxt prepare"
   },
   "dependencies": {
-    "plasmo": "0.90.5",
-    "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "better-auth": "1.7.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.0.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@types/chrome": "0.0.270",
-    "@types/react": "18.2.48",
-    "@types/react-dom": "18.2.18",
-    "autoprefixer": "10.4.19",
-    "postcss": "8.4.38",
-    "prettier": "3.2.4",
-    "tailwindcss": "3.4.3",
-    "typescript": "5.3.3"
-  },
-  "manifest": {
-    "host_permissions": [
-      "https://www.youtube.com/*"
-    ],
-    "permissions": [
-      "storage"
-    ]
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@wxt-dev/auto-icons": "^1.1.2",
+    "@wxt-dev/module-react": "^1.2.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.0",
+    "wxt": "^0.21.4"
   }
 }

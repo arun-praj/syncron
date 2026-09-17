@@ -157,7 +157,7 @@ export async function createApp(deps: {
     const body = protocol.onboarding.parse(await c.req.json());
     const id = c.get("userId");
     await store.completeOnboarding(id, body);
-    return c.json(await me(id));
+    return c.json({ user: await me(id) });
   });
   app.get("/api/v1/users/:userId", async (c) =>
     c.json({
