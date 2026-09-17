@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Syncron — Verify email</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:#f4f4f5;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;}
+  ::placeholder{color:#a1a1aa}
+  .popup{width:400px;height:600px;overflow-y:auto;background:#ffffff;box-shadow:0 0 0 1px #e4e4e7,0 20px 40px rgba(0,0,0,.08);}
+  .wrap{padding:26px 22px 18px;display:flex;flex-direction:column;align-items:center;}
+  .logo-row{display:flex;align-items:center;gap:8px;margin-bottom:20px;}
+  .logo-text{font-weight:700;font-size:16px;color:#0a0a0a;letter-spacing:-0.01em;}
+  .icon-badge{width:52px;height:52px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;margin-bottom:16px;}
+  h1{margin:0 0 5px;font-size:20px;font-weight:700;color:#0a0a0a;letter-spacing:-0.02em;text-align:center;white-space:nowrap;}
+  .subtext{margin:0 0 4px;font-size:12.5px;color:#71717a;text-align:center;line-height:1.4;}
+  .subtext b{color:#0a0a0a;font-weight:600;}
+  .expiry-note{margin:0 0 20px;font-size:11px;color:#a1a1aa;text-align:center;}
+  .card{width:100%;border-radius:16px;border:1px solid #ececec;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.03),0 10px 24px -12px rgba(0,0,0,.08);padding:20px;}
+  .otp-row{display:flex;gap:8px;justify-content:space-between;margin-bottom:18px;}
+  .otp-input{width:42px;height:48px;text-align:center;font-size:17px;font-weight:500;color:#0a0a0a;border-radius:9px;border:1px solid #e4e4e7;background:#fff;outline:none;transition:border-color .15s ease,box-shadow .15s ease;font-family:inherit;}
+  .otp-input:focus{border-color:#0a0a0a;box-shadow:0 0 0 3px rgba(10,10,10,.06);}
+  .otp-input.error{border-color:#ef4444;}
+  @keyframes shake{10%,90%{transform:translateX(-1px);}20%,80%{transform:translateX(2px);}30%,50%,70%{transform:translateX(-4px);}40%,60%{transform:translateX(4px);}}
+  .otp-row.shake{animation:shake .4s;}
+  .primary-btn{margin-top:2px;width:100%;padding:10px 14px;border-radius:6px;border:none;background:linear-gradient(to bottom,#3b82f6,#1d4ed8);color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;text-shadow:0 1px 2px rgba(0,0,0,.2);box-shadow:0 1px 2px rgba(0,0,0,.1),inset 0 1px 0 rgba(255,255,255,.25);transition:box-shadow .2s ease;font-family:inherit;}
+  .primary-btn:hover{box-shadow:0 1px 2px rgba(0,0,0,.1),0 3px 8px rgba(30,144,255,.5),inset 0 1px 0 rgba(255,255,255,.25);}
+  .hint{margin:10px 0 0;font-size:11px;color:#ef4444;text-align:center;min-height:13px;}
+  .resend-row{margin:8px 0 0;font-size:12.5px;color:#71717a;text-align:center;}
+  .resend-row a{color:#2563eb;text-decoration:none;font-weight:600;}
+  .resend-row a:hover{text-decoration:underline;}
+  .resend-row a.disabled{color:#a1a1aa;font-weight:500;cursor:default;pointer-events:none;}
+  .back-link{margin-top:18px;font-size:12.5px;color:#71717a;text-decoration:none;}
+  .back-link:hover{color:#0a0a0a;text-decoration:underline;}
+</style>
+</head>
+<body>
+  <div class="popup">
+    <div class="wrap">
+      <div class="logo-row">
+        <svg width="22" height="22" viewBox="0 0 30 30" fill="none">
+          <circle cx="12" cy="15" r="10" stroke="#18181b" stroke-width="2"></circle>
+          <circle cx="19" cy="12" r="7" stroke="#18181b" stroke-width="2" fill="#fff"></circle>
+          <path d="M17 10.5L21.5 12.5L17 14.5V10.5Z" fill="#18181b"></path>
+        </svg>
+        <span class="logo-text">Syncron</span>
+      </div>
+
+      <div class="icon-badge">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M3 6.5L11.02 12.5C11.5952 12.9256 12.4048 12.9256 12.98 12.5L21 6.5M5 19H19C20.1046 19 21 18.1046 21 17V7C21 5.89543 20.1046 5 19 5H5C3.89543 5 3 5.89543 3 7V17C3 18.1046 3.89543 19 5 19Z" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+      </div>
+
+      <h1>Verify your email</h1>
+      <p class="subtext">We sent a 6-digit code to<br><b id="masked-email">ja***@example.com</b></p>
+      <p class="expiry-note">Code expires in 5 minutes</p>
+
+      <div class="card">
+        <form id="otp-form" onsubmit="return false;">
+          <div class="otp-row">
+            <input class="otp-input" type="text" inputmode="numeric" maxlength="1" autocomplete="one-time-code">
+            <input class="otp-input" type="text" inputmode="numeric" maxlength="1">
+            <input class="otp-input" type="text" inputmode="numeric" maxlength="1">
+            <input class="otp-input" type="text" inputmode="numeric" maxlength="1">
+            <input class="otp-input" type="text" inputmode="numeric" maxlength="1">
+            <input class="otp-input" type="text" inputmode="numeric" maxlength="1">
+          </div>
+
+          <button type="submit" class="primary-btn">Verify email</button>
+          <p class="hint" id="hint"></p>
+        </form>
+
+        <p class="resend-row">Didn't get a code? <a href="#" id="resend-link">Resend in 60s</a></p>
+      </div>
+
+      <a href="signup-standalone.html" class="back-link">&larr; Back to sign up</a>
+    </div>
+  </div>
+
+<script>
+  // Static design mock only — no real OTP is sent, verified or resent here.
+  const inputs = [...document.querySelectorAll('.otp-input')];
+  const otpRow = document.querySelector('.otp-row');
+  const hint = document.getElementById('hint');
+
+  function focusFirstEmpty(){
+    const empty = inputs.find((i) => !i.value);
+    (empty || inputs[inputs.length - 1]).focus();
+  }
+
+  inputs.forEach((el, i) => {
+    el.addEventListener('input', (e) => {
+      e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(-1);
+      el.classList.remove('error');
+      if (e.target.value && inputs[i + 1]) inputs[i + 1].focus();
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !e.target.value && inputs[i - 1]) inputs[i - 1].focus();
+    });
+    el.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const digits = (e.clipboardData.getData('text') || '').replace(/[^0-9]/g, '').slice(0, 6);
+      if (!digits) return;
+      digits.split('').forEach((d, idx) => { if (inputs[idx]) inputs[idx].value = d; });
+      (inputs[digits.length] || inputs[inputs.length - 1]).focus();
+    });
+  });
+
+  document.getElementById('otp-form').addEventListener('submit', () => {
+    const code = inputs.map((i) => i.value).join('');
+    if (code.length < 6) {
+      inputs.forEach((i) => { if (!i.value) i.classList.add('error'); });
+      hint.textContent = 'Enter all 6 digits.';
+      otpRow.classList.add('shake');
+      setTimeout(() => otpRow.classList.remove('shake'), 400);
+      focusFirstEmpty();
+      return;
+    }
+    hint.textContent = '';
+    window.location.href = 'onboarding-standalone.html';
+  });
+
+  inputs[0].focus();
+
+  // 60-second rotating resend cooldown (docs/API-schema.md: hashed, three
+  // attempts, 300s expiry, 60s resend cooldown).
+  const resendLink = document.getElementById('resend-link');
+  let timer = null;
+
+  function startCooldown(){
+    let seconds = 60;
+    resendLink.classList.add('disabled');
+    resendLink.textContent = `Resend in ${seconds}s`;
+    timer = setInterval(() => {
+      seconds--;
+      if (seconds <= 0) {
+        clearInterval(timer);
+        resendLink.textContent = 'Resend code';
+        resendLink.classList.remove('disabled');
+      } else {
+        resendLink.textContent = `Resend in ${seconds}s`;
+      }
+    }, 1000);
+  }
+
+  resendLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (resendLink.classList.contains('disabled')) return;
+    startCooldown();
+  });
+
+  startCooldown();
+</script>
+</body>
+</html>

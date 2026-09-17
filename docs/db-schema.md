@@ -70,7 +70,7 @@ Syncron-specific profile data keyed 1:1 to the Better Auth user.
 | `username` | TEXT | no | | non-unique editable normalized label |
 | `created_at` | INTEGER/TEXT timestamp | no |  | UTC |
 | `updated_at` | INTEGER/TEXT timestamp | no |  | UTC |
-| `avatar_id` | TEXT | yes | one of bundled IDs 1–20 | stable extension avatar |
+| `avatar_id` | TEXT | yes | one of bundled IDs 1–30 | stable extension avatar |
 | `onboarding_completed_at` | timestamp | yes | | required before party create/join |
 
 ### Username rules

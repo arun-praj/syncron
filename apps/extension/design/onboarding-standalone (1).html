@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Syncron — Set up your profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:#f4f4f5;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;}
+  .popup{width:400px;height:600px;overflow-y:auto;background:#ffffff;box-shadow:0 0 0 1px #e4e4e7,0 20px 40px rgba(0,0,0,.08);}
+  .wrap{padding:18px 22px 16px;display:flex;flex-direction:column;align-items:center;}
+  .logo-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .logo-text{font-weight:700;font-size:15px;color:#0a0a0a;letter-spacing:-0.01em;}
+  h1{margin:0 0 4px;font-size:19px;font-weight:600;color:#0a0a0a;letter-spacing:-0.03em;text-align:center;white-space:nowrap;}
+  .subtext{margin:0 0 14px;font-size:12px;color:#737373;text-align:center;line-height:1.4;letter-spacing:-0.005em;}
+  .card{width:100%;border-radius:16px;border:1px solid #ececec;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.03),0 10px 24px -12px rgba(0,0,0,.08);padding:16px;}
+  .avatar-preview-row{display:flex;justify-content:center;margin-bottom:10px;}
+  #avatar-preview{width:56px;height:56px;border-radius:50%;background:#f4f4f5;border:1px solid #ececec;object-fit:cover;}
+  .avatar-label{display:block;font-size:11.5px;color:#3f3f46;font-weight:500;margin-bottom:6px;text-align:center;}
+  .avatar-scroll{max-height:132px;overflow-y:auto;margin-bottom:12px;padding-right:2px;}
+  .avatar-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;}
+  .avatar-btn{width:100%;max-width:38px;aspect-ratio:1;padding:0;border-radius:50%;cursor:pointer;background:#f4f4f5;border:2px solid transparent;box-sizing:border-box;transition:border-color .15s ease,box-shadow .15s ease;}
+  .avatar-btn.selected{border-color:#2563eb;box-shadow:0 0 0 2px #eff6ff;}
+  .avatar-btn img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;}
+  label.field-label{display:block;font-size:11.5px;color:#3f3f46;margin-bottom:4px;font-weight:500;}
+  .username-wrap{position:relative;}
+  .at-prefix{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:#a1a1aa;}
+  input#username{width:100%;padding:9px 12px 9px 24px;border-radius:9px;border:1px solid #e4e4e7;background:#fff;color:#0a0a0a;font-size:13px;outline:none;transition:border-color .15s ease;font-family:inherit;}
+  input#username.error{border-color:#fca5a5;}
+  input#username:focus{border-color:#0a0a0a;box-shadow:0 0 0 3px rgba(10,10,10,.06);}
+  #username-msg{margin:4px 0 0;font-size:11px;letter-spacing:-0.005em;color:#a1a1aa;}
+  #username-msg.error{color:#dc2626;}
+  #continue-btn{margin-top:10px;width:100%;padding:9px 14px;border-radius:6px;border:none;color:#fff;font-size:13.5px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.2);background:linear-gradient(to bottom,#3b82f6,#1d4ed8);box-shadow:0 1px 2px rgba(0,0,0,.1),inset 0 1px 0 rgba(255,255,255,.25);transition:box-shadow .2s ease,opacity .2s ease;font-family:inherit;}
+  #continue-btn:disabled{opacity:.5;cursor:not-allowed;}
+  #continue-btn:not(:disabled){cursor:pointer;}
+  #continue-btn:not(:disabled):hover{box-shadow:0 1px 2px rgba(0,0,0,.1),0 3px 8px rgba(30,144,255,.5),inset 0 1px 0 rgba(255,255,255,.25);}
+</style>
+</head>
+<body>
+  <div class="popup">
+    <div class="wrap">
+      <div class="logo-row">
+        <svg width="20" height="20" viewBox="0 0 30 30" fill="none">
+          <circle cx="12" cy="15" r="10" stroke="#18181b" stroke-width="2"></circle>
+          <circle cx="19" cy="12" r="7" stroke="#18181b" stroke-width="2" fill="#fff"></circle>
+          <path d="M17 10.5L21.5 12.5L17 14.5V10.5Z" fill="#18181b"></path>
+        </svg>
+        <span class="logo-text">Syncron</span>
+      </div>
+
+      <h1>Set up your profile</h1>
+      <p class="subtext">Pick an avatar and a username so friends can find you.</p>
+
+      <div class="card">
+        <div class="avatar-preview-row"><img id="avatar-preview" alt="Selected avatar"></div>
+
+        <label class="avatar-label">Choose your memoji</label>
+        <div class="avatar-scroll"><div class="avatar-grid" id="avatar-grid"></div></div>
+
+        <div>
+          <label class="field-label" for="username">Username</label>
+          <div class="username-wrap">
+            <span class="at-prefix">@</span>
+            <input id="username" type="text" placeholder="jamierivera" maxlength="20">
+          </div>
+          <p id="username-msg">3–20 characters: letters, numbers, underscores.</p>
+        </div>
+
+        <button id="continue-btn" type="button" disabled>Continue</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const SEEDS = ['nova','pixel','koda','luma','ember','sable','breeze','quill','onyx','maple','zephyr','indigo','sunny','rook','wisp','atlas','birch','cove','drift','flint','glow','harbor','ion','jade','kite','lark','moss','opal','pearl','quartz'];
+  const avatarUrl = seed => `https://tapback.co/api/avatar/${seed}.webp`;
+  let selectedSeed = SEEDS[Math.floor(Math.random() * SEEDS.length)];
+
+  const grid = document.getElementById('avatar-grid');
+  const preview = document.getElementById('avatar-preview');
+  const usernameInput = document.getElementById('username');
+  const usernameMsg = document.getElementById('username-msg');
+  const continueBtn = document.getElementById('continue-btn');
+
+  function renderAvatars(){
+    grid.innerHTML = '';
+    SEEDS.forEach(seed => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'avatar-btn' + (seed === selectedSeed ? ' selected' : '');
+      btn.innerHTML = `<img src="${avatarUrl(seed)}" alt="Memoji option">`;
+      btn.addEventListener('click', () => { selectedSeed = seed; renderAvatars(); updatePreview(); });
+      grid.appendChild(btn);
+    });
+  }
+  function updatePreview(){ preview.src = avatarUrl(selectedSeed); }
+
+  function validateUsername(value){
+    if(!value.trim()) return 'Username is required.';
+    if(value.length < 3) return 'Must be at least 3 characters.';
+    if(value.length > 20) return 'Must be 20 characters or fewer.';
+    if(!/^[a-zA-Z0-9_]+$/.test(value)) return 'Only letters, numbers, and underscores.';
+    if(/^[0-9]/.test(value)) return 'Cannot start with a number.';
+    return '';
+  }
+
+  let touched = false;
+  usernameInput.addEventListener('input', () => {
+    touched = true;
+    const error = validateUsername(usernameInput.value);
+    usernameInput.classList.toggle('error', !!error);
+    usernameMsg.textContent = error || '3–20 characters: letters, numbers, underscores.';
+    usernameMsg.classList.toggle('error', !!error);
+    continueBtn.disabled = !!error;
+  });
+
+  continueBtn.addEventListener('click', () => {
+    touched = true;
+    const error = validateUsername(usernameInput.value);
+    if(!error){
+      // proceed to next screen
+    }
+  });
+
+  renderAvatars();
+  updatePreview();
+</script>
+</body>
+</html>

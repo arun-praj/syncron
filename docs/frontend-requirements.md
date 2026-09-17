@@ -4,7 +4,7 @@ Syncron is a Chrome and Firefox extension built with WXT, React, TypeScript and 
 
 ## Flow
 
-Users sign up or log in. Email/password signup requires a six-digit email OTP. After verification, onboarding requires a username and one bundled avatar. The extension ships 20 curated Tapback Memoji PNGs with attribution; it never requests avatar images at runtime and has no upload flow. Google users skip email OTP but still complete onboarding.
+Users sign up or log in. Email/password signup requires a six-digit email OTP. After verification, onboarding requires a username and one bundled avatar. The extension ships 30 curated Tapback Memoji PNGs with attribution; it never requests avatar images at runtime and has no upload flow. Google users skip email OTP but still complete onboarding.
 
 The home screen shows YouTube, Spotify, Netflix and generic HTML5 entry points. On a supported media page it goes directly to party creation. A party cannot start until a specific playable video/audio page URL is detected. Creation submits the page media descriptor and the `everyoneCanControl` toggle in one request.
 

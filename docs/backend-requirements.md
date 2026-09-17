@@ -4,7 +4,7 @@ The Hono API remains the authority for Better Auth identity, onboarding, party m
 
 ## Required changes
 
-- `user_profiles` stores nullable `avatar_id` and `onboarding_completed_at`; valid avatar IDs are `1` through `20`.
+- `user_profiles` stores nullable `avatar_id` and `onboarding_completed_at`; valid avatar IDs are `1` through `30`.
 - `/api/v1/me` returns avatar and onboarding status. `POST /api/v1/me/onboarding` completes onboarding atomically. `PATCH /api/v1/me` can change the username and avatar.
 - Creating or joining a party requires completed onboarding.
 - Room creation accepts `everyoneCanControl` and an initial provider/media ID/page URL together. The room stores only the initial media descriptor; transient position, pause/rate state and chat remain in memory/LiveKit.
