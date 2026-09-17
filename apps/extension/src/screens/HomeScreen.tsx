@@ -92,6 +92,10 @@ export default function HomeScreen({
           </div>
         </div>
       </div>
+
+      <p className="border-t border-border px-[18px] py-3 text-center text-[10.5px] leading-relaxed text-ink-placeholder">
+        Syncron is independent and is not endorsed by Netflix, YouTube, Spotify, or other providers.
+      </p>
     </div>
   );
 }
