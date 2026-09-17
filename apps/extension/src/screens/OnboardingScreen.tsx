@@ -37,10 +37,10 @@ export default function OnboardingScreen() {
         <Logo />
       </div>
 
-      <h1 className="mb-1 whitespace-nowrap text-[19px] font-semibold tracking-[-0.03em] text-ink-primary">
+      <h1 className="mb-1 whitespace-nowrap text-h1 font-bold text-ink-primary">
         Set up your profile
       </h1>
-      <p className="mb-3.5 text-center text-[12px] tracking-[-0.005em] text-ink-secondary">
+      <p className="mb-3.5 text-center text-subtext text-ink-secondary">
         Pick an avatar and a username so friends can find you.
       </p>
 
