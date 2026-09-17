@@ -3,8 +3,10 @@ import { useState } from "react";
 import { isRateLimited } from "@/auth-flow";
 import { Button } from "@/components/Button";
 import { CheckIcon, ChevronLeftIcon } from "@/components/icons";
+import { formatPlaybackTime } from "@/lib/format-time";
 import type { StreamingService } from "@/lib/streaming-services";
 import { api, ApiError } from "@/services/api/client";
+import { usePlaybackSnapshot } from "@/hooks/usePlaybackSnapshot";
 
 function startPartyErrorMessage(error: unknown): string {
   if (error instanceof ApiError && isRateLimited(error.status, error.code)) {
@@ -15,15 +17,22 @@ function startPartyErrorMessage(error: unknown): string {
 
 export default function PartySetupScreen({
   service,
+  tabId,
   tabTitle,
   tabUrl,
   onBack,
 }: {
   service: StreamingService;
+  tabId: number;
   tabTitle: string;
   tabUrl: string;
   onBack: () => void;
 }) {
+  const liveSnapshot = usePlaybackSnapshot(service.id === "YOUTUBE" ? tabId : null);
+  const detailLine = liveSnapshot
+    ? `${liveSnapshot.title} (${formatPlaybackTime(liveSnapshot.currentTime)})`
+    : tabTitle;
+
   const [allowControl, setAllowControl] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +93,7 @@ export default function PartySetupScreen({
               <div className="text-[13px] font-semibold tracking-[-0.005em] text-ink-primary">
                 {service.name} detected
               </div>
-              <div className="truncate text-[11.5px] text-ink-placeholder">{tabTitle}</div>
+              <div className="truncate text-[11.5px] text-ink-placeholder">{detailLine}</div>
             </div>
           </div>
 

@@ -96,6 +96,7 @@ export default function App() {
     content = (
       <PartySetupScreen
         service={detected.service}
+        tabId={detected.tabId}
         tabTitle={detected.title}
         tabUrl={detected.url}
         onBack={() => setPage("home")}

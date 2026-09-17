@@ -3,10 +3,29 @@ import { useState } from "react";
 
 import { CallOverlay } from "@/features/call/CallOverlay";
 import { ChatPanel } from "@/features/chat/ChatPanel";
+import { isPlaybackSnapshotRequest, type PlaybackSnapshot } from "@/lib/playback-messages";
 
 import "@/style.css";
 
 type Tab = "chat" | "call";
+
+// Read-only snapshot of the page's <video> element for display purposes
+// (e.g. "Me at the zoo (1:32)" in the party-setup screen). This
+// deliberately stays a plain HTML5 video read, not a YouTube player API
+// integration — docs/extension-architecture.md reserves that heavier
+// integration for actual playback *control* fidelity, which isn't needed
+// just to report position.
+function readPlaybackSnapshot(): PlaybackSnapshot | null {
+  const video = document.querySelector("video");
+  if (!video || Number.isNaN(video.duration)) return null;
+
+  // YouTube sets the tab title to "<video title> - YouTube" on watch
+  // pages; stripping that suffix is far more stable than depending on
+  // YouTube's internal (frequently-changing) title DOM structure.
+  const title = document.title.replace(/ - YouTube$/, "");
+
+  return { title, currentTime: video.currentTime, duration: video.duration, paused: video.paused };
+}
 
 function SyncronOverlay() {
   const [open, setOpen] = useState(false);
@@ -62,6 +81,11 @@ export default defineContentScript({
   matches: ["https://www.youtube.com/watch*"],
   cssInjectionMode: "ui",
   async main(ctx) {
+    browser.runtime.onMessage.addListener((message) => {
+      if (!isPlaybackSnapshotRequest(message)) return;
+      return Promise.resolve(readPlaybackSnapshot());
+    });
+
     const ui = await createShadowRootUi(ctx, {
       name: "syncron-overlay",
       position: "inline",
