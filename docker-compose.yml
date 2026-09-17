@@ -1,0 +1,44 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      API_PORT: 3000
+      DATABASE_URL: file:/data/syncron.db
+      LIVEKIT_INTERNAL_URL: http://livekit:7880
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_SENDER: syncron@localhost.test
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - syncron_sqlite:/data
+    depends_on:
+      - livekit
+      - mailpit
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    stop_grace_period: 10s
+  livekit:
+    image: livekit/livekit-server:v1.9.11
+    command: ["--config", "/etc/livekit.yaml"]
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET}"
+    volumes:
+      - ./infra/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "127.0.0.1:7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+  mailpit:
+    image: axllent/mailpit:v1.27.8
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+volumes:
+  syncron_sqlite:

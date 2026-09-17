@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1789393339055,
+      "tag": "0000_wooden_proudstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789492214912,
+      "tag": "0001_dry_naoko",
+      "breakpoints": true
+    }
+  ]
+}
