@@ -133,6 +133,20 @@ export const ChevronLeftIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+export const PeopleIcon = ({ className }: { className?: string }) => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" className={className}>
+    <circle cx="7" cy="8" r="3" stroke="currentColor" strokeWidth={2} />
+    <path d="M2 20c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+    <circle cx="17" cy="8" r="3" stroke="currentColor" strokeWidth={2} />
+    <path
+      d="M12.5 15.2c.5-.1 1-.2 1.5-.2c2.8 0 5 2.2 5 5"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
 export const ChevronRightIcon = ({ className }: { className?: string }) => (
   <svg
     width="14"

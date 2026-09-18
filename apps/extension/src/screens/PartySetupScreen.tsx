@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { browser } from "wxt/browser";
+import { browser, type PublicPath } from "wxt/browser";
 
 import { isRateLimited } from "@/auth-flow";
 import { Button } from "@/components/Button";
-import { ChevronLeftIcon } from "@/components/icons";
+import { ChevronLeftIcon, PeopleIcon } from "@/components/icons";
 import { formatPlaybackTime } from "@/lib/format-time";
 import type { PlaybackSnapshot } from "@/lib/playback-messages";
 import type { StreamingService } from "@/lib/streaming-services";
@@ -75,7 +75,7 @@ export default function PartySetupScreen({
           className="flex h-[26px] w-[26px] items-center justify-center rounded-lg text-ink-label transition-colors hover:bg-neutral-100">
           <ChevronLeftIcon />
         </button>
-        <span className="text-logo font-bold tracking-[-0.01em] text-ink-primary">
+        <span className="text-[14px] font-bold tracking-[-0.01em] text-ink-primary">
           Start a watch party
         </span>
       </div>
@@ -83,7 +83,7 @@ export default function PartySetupScreen({
       <div className="flex flex-1 flex-col">
         <div className="flex flex-shrink-0 items-center gap-2.5 px-[18px] pb-1.5 pt-4">
           <img
-            src={browser.runtime.getURL(service.icon.replace(/^\/+/, ""))}
+            src={browser.runtime.getURL(service.icon as PublicPath)}
             alt=""
             className="h-[34px] w-[34px] flex-shrink-0 rounded-[9px]"
           />
@@ -124,7 +124,7 @@ export default function PartySetupScreen({
                 allowControl ? "bg-accent" : "bg-neutral-300"
               }`}>
               <span
-                className={`absolute top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-[left] duration-150 ${
+                className={`absolute top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2)] transition-[left] duration-150 ${
                   allowControl ? "left-[18px]" : "left-0.5"
                 }`}
               />
@@ -168,22 +168,19 @@ export default function PartySetupScreen({
                 allowShare ? "bg-accent" : "bg-neutral-300"
               }`}>
               <span
-                className={`absolute top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-[left] duration-150 ${
+                className={`absolute top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2)] transition-[left] duration-150 ${
                   allowShare ? "left-[18px]" : "left-0.5"
                 }`}
               />
             </button>
           </div>
 
-          <p className="mt-2.5 px-0.5 text-[11.5px] leading-relaxed text-ink-placeholder">
-            Off by default — turn on each permission to let members control playback or share the invite link.
-          </p>
-
           {error && <p className="mt-3 text-[11.5px] text-red-500">{error}</p>}
 
           <Button
             type="button"
             className="mt-5"
+            icon={<PeopleIcon />}
             disabled={isStarting}
             onClick={() => void startParty()}>
             {isStarting ? "Starting…" : "Start watch party"}
