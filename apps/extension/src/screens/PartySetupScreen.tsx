@@ -127,7 +127,7 @@ export default function PartySetupScreen({
               <div className="text-[13.5px] font-semibold tracking-[-0.005em] text-ink-primary">
                 Let members control playback
               </div>
-              <p className="mt-[3px] text-[12px] leading-relaxed text-ink-secondary">
+              <p className="mt-[3px] text-[12px] leading-[1.5] text-[#737373]">
                 Anyone in the room can play, pause, seek, and mute for everyone.
               </p>
             </div>
@@ -171,7 +171,7 @@ export default function PartySetupScreen({
               <div className="text-[13.5px] font-semibold tracking-[-0.005em] text-ink-primary">
                 Allow members to share the invite link
               </div>
-              <p className="mt-[3px] text-[12px] leading-relaxed text-ink-secondary">
+              <p className="mt-[3px] text-[12px] leading-[1.5] text-[#737373]">
                 Anyone in the room can copy and send the link to others.
               </p>
             </div>
