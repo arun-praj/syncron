@@ -79,3 +79,11 @@ HTTP DTOs and WebSocket event payloads that are consumed by both API and extensi
 ## Testing rule
 
 For every feature, add tests at the lowest appropriate level and integration/E2E coverage for critical room/auth/realtime behavior.
+
+## Pre-approved commands
+
+The following commands are allowlisted in `.claude/settings.json` and run without a permission prompt: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm view <pkg> ...`. Immediately before running one of these, output a one-line notice in this exact form so the skipped prompt stays visible:
+
+`*** auto-approved: <command> ***`
+
+Do not add further commands to this silent-run list without the user's explicit approval — mutating commands (`pnpm install`, `pnpm --dir ... build`, `git rm`, `rm -rf`, etc.) must keep prompting.

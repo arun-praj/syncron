@@ -100,7 +100,7 @@ className="flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-ful
         </button>
       </div>
 
-      <div className="flex flex-shrink-0 items-center gap-2 border-b border-border bg-neutral-50 px-[18px] py-2">
+      <div className="flex flex-shrink-0 items-center gap-2 border-b border-border bg-neutral-50 px-[18px] py-2.5">
         <span
           className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${isPlaying ? "bg-green-500" : "bg-neutral-300"}`}
         />
@@ -108,31 +108,36 @@ className="flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-ful
         <span className="flex-shrink-0 text-[11px] font-medium text-ink-placeholder">
           {isPlaying ? "Playing" : "Paused"} · {timeLabel}
         </span>
-        <div className="ml-1 flex flex-shrink-0 items-center gap-1.5">
+        {/* Sized like the app's other primary media controls (see
+            components/IconButton.tsx's 40px default) — the original
+            design mock specified 24px circles with 11px icons for these,
+            which is where the "too small" complaint actually came from;
+            matching the mock more closely would not have fixed it. */}
+        <div className="ml-1 flex flex-shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => setSelfMuted((v) => !v)}
             aria-label={selfMuted ? "Unmute yourself" : "Mute yourself"}
-            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+            className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
               selfMuted
                 ? "bg-red-600 text-white hover:bg-red-700"
-                : "bg-neutral-100 text-ink-primary hover:bg-neutral-200"
+                : "bg-neutral-200 text-ink-primary hover:bg-neutral-300"
             }`}>
-            {selfMuted ? <MicOffMiniIcon className="h-3.5 w-3.5" /> : <MicMiniIcon className="h-3.5 w-3.5" />}
+            {selfMuted ? <MicOffMiniIcon className="h-[18px] w-[18px]" /> : <MicMiniIcon className="h-[18px] w-[18px]" />}
           </button>
           <button
             type="button"
             onClick={() => setSelfVideoOff((v) => !v)}
             aria-label={selfVideoOff ? "Turn camera on" : "Turn camera off"}
-            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+            className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
               selfVideoOff
                 ? "bg-red-600 text-white hover:bg-red-700"
-                : "bg-neutral-100 text-ink-primary hover:bg-neutral-200"
+                : "bg-neutral-200 text-ink-primary hover:bg-neutral-300"
             }`}>
             {selfVideoOff ? (
-              <CameraOffMiniIcon className="h-3.5 w-3.5" />
+              <CameraOffMiniIcon className="h-[18px] w-[18px]" />
             ) : (
-              <CameraMiniIcon className="h-3.5 w-3.5" />
+              <CameraMiniIcon className="h-[18px] w-[18px]" />
             )}
           </button>
         </div>
