@@ -2,9 +2,9 @@ import { createAuthClient } from "better-auth/client";
 import { emailOTPClient } from "better-auth/client/plugins";
 import { storage } from "wxt/utils/storage";
 
-// docker-compose.yml maps the API container to host port 3001 in dev.
+// docker-compose.yml maps the API container to host port 8000 in dev.
 // Override via a WXT env file (WXT_API_URL) for other environments.
-const API_BASE_URL = import.meta.env.WXT_API_URL ?? "http://localhost:3001";
+const API_BASE_URL = import.meta.env.WXT_API_URL ?? "http://localhost:8000";
 
 export const AUTH_TOKEN_KEY = "local:authToken" as const;
 

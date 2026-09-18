@@ -11,7 +11,7 @@ const override = join(dir, "compose.yml");
 const secret = () => randomBytes(32).toString("hex");
 await writeFile(
   envPath,
-  `BETTER_AUTH_SECRET=${secret()}\nINVITE_SECRET=${secret()}\nLIVEKIT_API_SECRET=${secret()}\nLIVEKIT_API_KEY=smoke\nLIVEKIT_URL=ws://localhost:7880\nLIVEKIT_INTERNAL_URL=http://livekit:7880\nAPP_URL=http://localhost:3001\nBETTER_AUTH_URL=http://localhost:3001\n`,
+  `BETTER_AUTH_SECRET=${secret()}\nINVITE_SECRET=${secret()}\nLIVEKIT_API_SECRET=${secret()}\nLIVEKIT_API_KEY=smoke\nLIVEKIT_URL=ws://localhost:7880\nLIVEKIT_INTERNAL_URL=http://livekit:7880\nAPP_URL=http://localhost:8000\nBETTER_AUTH_URL=http://localhost:8000\n`,
 );
 // Compose's base env_file requires .env; an override reset selects only generated smoke credentials.
 await writeFile(
@@ -42,7 +42,7 @@ const compose = (...args: string[]) =>
     );
   });
 const request = async (path: string, body?: unknown, token?: string) => {
-  const r = await fetch(`http://localhost:3001${path}`, {
+  const r = await fetch(`http://localhost:8000${path}`, {
     method: body ? "POST" : "GET",
     headers: {
       "content-type": "application/json",

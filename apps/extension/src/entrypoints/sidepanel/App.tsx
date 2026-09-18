@@ -2,17 +2,22 @@ import { useEffect, useState, type ReactNode } from "react";
 import { browser } from "wxt/browser";
 
 import { useDetectedStreamingTab } from "@/hooks/useDetectedStreamingTab";
+import { OPEN_SERVICE_TAB } from "@/lib/extension-messages";
+import type { StreamingService } from "@/lib/streaming-services";
 import HomeScreen from "@/screens/HomeScreen";
 import HowItWorksScreen from "@/screens/HowItWorksScreen";
 import OnboardingScreen from "@/screens/OnboardingScreen";
 import PartySetupScreen from "@/screens/PartySetupScreen";
 import ProfileScreen from "@/screens/ProfileScreen";
 import RoomScreen from "@/screens/RoomScreen";
-import type { StreamingService } from "@/lib/streaming-services";
 import { useAuthStore } from "@/stores/auth-store";
 
-async function openService(href: string) {
-  await browser.tabs.create({ url: href, active: true });
+async function openService(service: StreamingService) {
+  await browser.runtime.sendMessage({
+    type: OPEN_SERVICE_TAB,
+    href: service.href,
+    serviceId: service.id,
+  });
 }
 
 // "auto" defers to the currently detected tab (party setup on a supported
@@ -77,7 +82,7 @@ export default function App() {
     content = (
       <HomeScreen
         onOpenProfile={() => setPage("profile")}
-        onOpenService={(href) => void openService(href)}
+        onOpenService={(service) => void openService(service)}
         onOpenHowItWorks={() => setPage("how-it-works")}
       />
     );

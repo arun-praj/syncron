@@ -12,20 +12,20 @@ pnpm typecheck
 pnpm lint
 ```
 
-The API defaults to port 3001. `pnpm start` runs without watching. The development/start/migration commands load `.env` when present. SQLite is created from committed Drizzle migrations on API startup and by `pnpm migrate`; running either repeatedly is safe. Generate future migrations with `pnpm db:generate`. Never edit an already deployed migration.
+The API defaults to port 8000. `pnpm start` runs without watching. The development/start/migration commands load `.env` when present. SQLite is created from committed Drizzle migrations on API startup and by `pnpm migrate`; running either repeatedly is safe. Generate future migrations with `pnpm db:generate`. Never edit an already deployed migration.
 
 ## Environment
 
 | Variable | Default / purpose |
 |---|---|
 | `NODE_ENV` | `production`; set to `development` to bypass auth/CORS origin checks locally |
-| `API_PORT` | 3001 |
+| `API_PORT` | 8000 |
 | `DATABASE_URL` | `file:./data/syncron.db`; SQLite path or file URL |
-| `APP_URL` | `http://localhost:3001`; future invite landing origin |
-| `BETTER_AUTH_URL` | `http://localhost:3001`; API auth origin |
+| `APP_URL` | `http://localhost:8000`; future invite landing origin |
+| `BETTER_AUTH_URL` | `http://localhost:8000`; API auth origin |
 | `BETTER_AUTH_SECRET` | required random session/auth secret |
 | `INVITE_SECRET` | required separate random HMAC secret |
-| `TRUSTED_ORIGINS` | comma-separated explicit origins, defaults to `http://localhost:3001` |
+| `TRUSTED_ORIGINS` | comma-separated explicit origins, defaults to `http://localhost:8000` |
 | `LIVEKIT_URL` | required browser-facing ws/wss URL |
 | `LIVEKIT_INTERNAL_URL` | required server-facing http(s)/ws(s) URL |
 | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | both required; secret at least 32 characters |
@@ -41,7 +41,7 @@ Docker Compose 2.24.4+ is required for the isolated smoke-test override. `docker
 
 `GET /healthz` probes SQLite. `GET /readyz` probes SMTP and LiveKit management connectivity, returning 503 when either is unavailable. Compose uses readiness to gate the API's healthy status. LiveKit's management API is the authenticated health probe rather than a dependency on tools installed inside its image.
 
-`pnpm docker:smoke` generates temporary secrets, builds an isolated `syncron-smoke` Compose project, waits for readiness, signs up a user, reads their OTP from Mailpit, verifies email, signs in, creates a room, validates LiveKit claims, ends the room and removes only its own project volumes in `finally`. Ports 3001, 7880–7882, 1025 and 8025 must be available. Docker is not installed in the implementation environment, so this command requires validation on a Docker host.
+`pnpm docker:smoke` generates temporary secrets, builds an isolated `syncron-smoke` Compose project, waits for readiness, signs up a user, reads their OTP from Mailpit, verifies email, signs in, creates a room, validates LiveKit claims, ends the room and removes only its own project volumes in `finally`. Ports 8000, 7880–7882, 1025 and 8025 must be available. Docker is not installed in the implementation environment, so this command requires validation on a Docker host.
 
 ## Auth and realtime client flow
 

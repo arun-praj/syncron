@@ -13,7 +13,7 @@ pnpm migrate
 pnpm dev
 ```
 
-From WSL, run the stack from the mounted repository path. The API uses port 3001 so it does not collide with another app on port 3000:
+From WSL, run the stack from the mounted repository path. The API uses port 8000:
 
 ```sh
 cd /mnt/c/Users/aarun/Documents/syncron

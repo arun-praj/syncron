@@ -12,8 +12,8 @@ import type { z } from "zod";
 import { getStoredToken } from "~/services/auth/client";
 
 // Same origin as the Better Auth client (docker-compose.yml maps the API
-// container to host port 3001 in dev).
-const API_BASE_URL = import.meta.env.WXT_API_URL ?? "http://localhost:3001";
+// container to host port 8000 in dev).
+const API_BASE_URL = import.meta.env.WXT_API_URL ?? "http://localhost:8000";
 
 export class ApiError extends Error {
   code: string;

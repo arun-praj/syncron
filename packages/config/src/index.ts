@@ -5,10 +5,10 @@ const secret = z
   .refine((v) => !v.includes("replace-me"), "Replace placeholder secrets");
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("production"),
-  API_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+  API_PORT: z.coerce.number().int().min(1).max(65535).default(8000),
   DATABASE_URL: z.string().default("file:./data/syncron.db"),
-  APP_URL: z.url().default("http://localhost:3001"),
-  BETTER_AUTH_URL: z.url().default("http://localhost:3001"),
+  APP_URL: z.url().default("http://localhost:8000"),
+  BETTER_AUTH_URL: z.url().default("http://localhost:8000"),
   BETTER_AUTH_SECRET: secret,
   INVITE_SECRET: secret,
   LIVEKIT_URL: z.url(),
@@ -25,7 +25,7 @@ const schema = z.object({
   SMTP_HOST: z.string().default("localhost"),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(1025),
   SMTP_SENDER: z.email().default("syncron@localhost.test"),
-  TRUSTED_ORIGINS: z.string().default("http://localhost:3001"),
+  TRUSTED_ORIGINS: z.string().default("http://localhost:8000"),
 });
 export function config(env: Record<string, string | undefined> = process.env) {
   const c = schema.parse(
