@@ -23,7 +23,7 @@ async function syncTabActionSurface(tabId: number, url: string | undefined) {
   await Promise.all([
     supported
       ? browser.sidePanel.setOptions({ tabId, path: "sidepanel.html", enabled: true })
-      : browser.sidePanel.setOptions({ tabId, enabled: false }),
+      : Promise.resolve(),
     browser.action.setPopup({ tabId, popup: supported ? "" : DEFAULT_POPUP }),
   ]);
 }
@@ -31,8 +31,10 @@ async function syncTabActionSurface(tabId: number, url: string | undefined) {
 export default defineBackground(() => {
   void browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
-  // Disabled by default; syncTabActionSurface enables it per-tab below.
-  void browser.sidePanel.setOptions({ enabled: false });
+  // Keep the panel enabled while tabs change. Disabling it on an unsupported
+  // tab closes an already-open panel, and Edge will not reopen it when the
+  // user returns to the supported tab without another gesture.
+  void browser.sidePanel.setOptions({ path: "sidepanel.html", enabled: true });
 
   // The service worker's top-level code reruns on every startup (install,
   // browser relaunch, or waking for an event), so re-check every open tab
