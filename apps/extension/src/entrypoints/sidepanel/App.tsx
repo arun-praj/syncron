@@ -11,6 +11,7 @@ import PartySetupScreen from "@/screens/PartySetupScreen";
 import ProfileScreen from "@/screens/ProfileScreen";
 import RoomScreen from "@/screens/RoomScreen";
 import { useAuthStore } from "@/stores/auth-store";
+import { useRoomStore } from "@/stores/room-store";
 
 async function openService(service: StreamingService) {
   await browser.runtime.sendMessage({
@@ -25,17 +26,10 @@ async function openService(service: StreamingService) {
 // take priority over that detection until the user backs out again.
 type Page = "auto" | "home" | "profile" | "how-it-works" | "room";
 
-interface ActiveRoom {
-  inviteUrl: string;
-  service: StreamingService;
-  tabId: number;
-  tabTitle: string;
-}
-
 export default function App() {
   const { status, hydrate } = useAuthStore();
   const [page, setPage] = useState<Page>("auto");
-  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null);
+  const enterRoom = useRoomStore((s) => s.enterRoom);
   const detected = useDetectedStreamingTab();
 
   useEffect(() => {
@@ -64,20 +58,8 @@ export default function App() {
     content = <ProfileScreen onBack={() => setPage("auto")} />;
   } else if (page === "how-it-works") {
     content = <HowItWorksScreen onBack={() => setPage("auto")} />;
-  } else if (page === "room" && activeRoom) {
-    content = (
-      <RoomScreen
-        service={activeRoom.service}
-        tabId={activeRoom.tabId}
-        tabTitle={activeRoom.tabTitle}
-        inviteUrl={activeRoom.inviteUrl}
-        onBack={() => setPage("auto")}
-        onLeave={() => {
-          setActiveRoom(null);
-          setPage("home");
-        }}
-      />
-    );
+  } else if (page === "room") {
+    content = <RoomScreen onBack={() => setPage("auto")} onLeave={() => setPage("home")} />;
   } else if (page === "home" || detected === null) {
     content = (
       <HomeScreen
@@ -97,7 +79,7 @@ export default function App() {
         tabUrl={detected.url}
         onBack={() => setPage("home")}
         onEnterRoom={(inviteUrl) => {
-          setActiveRoom({
+          enterRoom({
             inviteUrl,
             service: detected.service,
             tabId: detected.tabId,
@@ -111,7 +93,10 @@ export default function App() {
 
   return (
     <div className="h-full overflow-y-auto bg-bg font-sans">
-      <div className="mx-auto h-full max-w-[400px]">{content}</div>
+      {/* RoomScreen is fluid-width by design (it reflows via its own
+          container queries, not this shell) — every other screen still
+          gets the fixed-width, centered treatment they were designed at. */}
+      <div className={page === "room" ? "h-full" : "mx-auto h-full max-w-[400px]"}>{content}</div>
     </div>
   );
 }

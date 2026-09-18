@@ -1,6 +1,6 @@
 import { avatarGlyphSrc } from "@/components/AvatarGlyph";
-import { MicMiniIcon, MicOffMiniIcon } from "@/features/room/room-icons";
-import type { RoomMember } from "@/features/room/room-mock-data";
+import { MicMiniIcon, MicOffMiniIcon } from "@/features/room/icons";
+import { useRoomStore, type RoomMember } from "@/stores/room-store";
 
 function MuteButton({
   member,
@@ -29,27 +29,28 @@ function MuteButton({
 function BufferingBadge({ variant }: { variant: "compact" | "grid" }) {
   if (variant === "compact") {
     return (
-      <div className="mt-0.5 flex items-center justify-center gap-1">
-        <span className="h-[5px] w-[5px] flex-shrink-0 rounded-full bg-amber-500" />
+      <div className="mt-px flex items-center justify-center gap-[3px]">
+        <span className="h-[5px] w-[5px] flex-shrink-0 rounded-full bg-[#f59e0b]" />
         <span className="text-[9.5px] text-ink-placeholder">Buffering…</span>
       </div>
     );
   }
   return (
-    <div className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-black/55 px-1.5 py-0.5">
-      <span className="h-[5px] w-[5px] flex-shrink-0 rounded-full bg-amber-500" />
+    <div className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-[rgba(0,0,0,0.55)] py-0.5 pl-1.5 pr-[7px]">
+      <span className="h-[5px] w-[5px] flex-shrink-0 rounded-full bg-[#f59e0b]" />
       <span className="text-[9px] font-medium text-white">Buffering…</span>
     </div>
   );
 }
 
-export function MemberGrid({
-  members,
-  onToggleMute,
-}: {
-  members: RoomMember[];
-  onToggleMute: (id: string) => void;
-}) {
+// Container-query breakpoints for `.room-member-grid` widening past 2
+// columns live in style.css — Tailwind's viewport-width `md:`/`lg:` variants
+// would key off the *page's* viewport, which is wrong for the YouTube
+// in-page sidebar (a ~380px column inside a full-width host page).
+export function MemberGrid() {
+  const members = useRoomStore((s) => s.members);
+  const toggleMemberMute = useRoomStore((s) => s.toggleMemberMute);
+
   // Nothing else to show tiles for when the host is alone in the room.
   if (members.length <= 1) return null;
 
@@ -61,28 +62,28 @@ export function MemberGrid({
         <div className="flex gap-2.5 overflow-x-auto pb-0.5">
           {members.map((member) => (
             <div key={member.id} className="w-[104px] flex-shrink-0 text-center">
-              <div className="relative mb-1 h-[78px] w-[104px] overflow-hidden rounded-[10px] bg-zinc-900">
+              <div className="relative mb-1 h-[78px] w-[104px] overflow-hidden rounded-[10px] bg-[#18181b]">
                 <img src={avatarGlyphSrc(member.avatarId)} alt="" className="h-full w-full object-cover" />
                 <div className="absolute bottom-1 right-1">
                   <MuteButton
                     member={member}
                     size="h-[26px] w-[26px]"
                     iconSize="h-3.5 w-3.5"
-                    onToggle={() => onToggleMute(member.id)}
+                    onToggle={() => toggleMemberMute(member.id)}
                   />
                 </div>
               </div>
-              <span className="block truncate text-[11px] font-medium text-neutral-600">{member.name}</span>
+              <span className="block truncate text-[11px] font-medium text-[#52525b]">{member.name}</span>
               {!member.synced && <BufferingBadge variant="compact" />}
             </div>
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="room-member-grid grid grid-cols-2 gap-2">
           {members.map((member) => (
-            <div key={member.id} className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-zinc-900">
+            <div key={member.id} className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[#18181b]">
               <img src={avatarGlyphSrc(member.avatarId)} alt="" className="h-full w-full object-cover" />
-              <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-black/65 to-transparent px-2 pb-1.5 pt-4">
+              <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-[rgba(0,0,0,0.65)] to-transparent px-2 pb-1.5 pt-4">
                 <span className="min-w-0 flex-1 truncate text-[11.5px] font-semibold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.4)]">
                   {member.name}
                 </span>
@@ -98,7 +99,7 @@ export function MemberGrid({
                   member={member}
                   size="h-[22px] w-[22px]"
                   iconSize="h-3 w-3"
-                  onToggle={() => onToggleMute(member.id)}
+                  onToggle={() => toggleMemberMute(member.id)}
                 />
               </div>
             </div>

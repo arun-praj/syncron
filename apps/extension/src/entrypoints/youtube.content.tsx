@@ -15,16 +15,12 @@ import PartySetupScreen from "@/screens/PartySetupScreen";
 import RoomScreen from "@/screens/RoomScreen";
 import { watchStoredSession } from "@/services/auth/client";
 import { useAuthStore } from "@/stores/auth-store";
+import { useRoomStore } from "@/stores/room-store";
 
 import "@/style.css";
 
 const YOUTUBE = STREAMING_SERVICES.find((service) => service.id === "YOUTUBE")!;
 const SIDEBAR_WIDTH = 380;
-
-interface ActiveRoom {
-  inviteUrl: string;
-  tabTitle: string;
-}
 
 function useYoutubeTabContext(tabId: number) {
   const [context, setContext] = useState(() => ({
@@ -114,7 +110,7 @@ function SyncronSidebar({ tabId }: { tabId: number }) {
   const { status, hydrate } = useAuthStore();
   const [open, setOpen] = useState(true);
   const [page, setPage] = useState<"setup" | "room">("setup");
-  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null);
+  const enterRoom = useRoomStore((s) => s.enterRoom);
   const context = useYoutubeTabContext(tabId);
   const readSnapshot = useCallback(async () => readPagePlaybackSnapshot(), []);
 
@@ -146,12 +142,12 @@ function SyncronSidebar({ tabId }: { tabId: number }) {
         readPlaybackSnapshot={readSnapshot}
         onBack={() => setOpen(false)}
         onEnterRoom={(inviteUrl) => {
-          setActiveRoom({ inviteUrl, tabTitle: context.tabTitle });
+          enterRoom({ inviteUrl, service: YOUTUBE, tabId, tabTitle: context.tabTitle, readPlaybackSnapshot: readSnapshot });
           setPage("room");
         }}
       />
     ),
-    [context.tabTitle, context.tabUrl, readSnapshot, tabId],
+    [context.tabTitle, context.tabUrl, readSnapshot, tabId, enterRoom],
   );
 
   let content: ReactNode;
@@ -175,21 +171,8 @@ function SyncronSidebar({ tabId }: { tabId: number }) {
     );
   } else if (status === "needs-onboarding") {
     content = <OnboardingScreen />;
-  } else if (page === "room" && activeRoom) {
-    content = (
-      <RoomScreen
-        service={YOUTUBE}
-        tabId={tabId}
-        tabTitle={activeRoom.tabTitle}
-        inviteUrl={activeRoom.inviteUrl}
-        readPlaybackSnapshot={readSnapshot}
-        onBack={() => setPage("setup")}
-        onLeave={() => {
-          setActiveRoom(null);
-          setPage("setup");
-        }}
-      />
-    );
+  } else if (page === "room") {
+    content = <RoomScreen onBack={() => setPage("setup")} onLeave={() => setPage("setup")} />;
   } else {
     content = setup;
   }

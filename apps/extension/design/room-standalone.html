@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Syncron — Watch party room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:#f4f4f5;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;}
+  .popup{width:400px;height:600px;position:relative;overflow:hidden;background:#fff;box-shadow:0 0 0 1px #e4e4e7,0 20px 40px rgba(0,0,0,.08);display:flex;flex-direction:column;}
+  @keyframes float-up{0%{transform:translateY(0) scale(0.6);opacity:0;}15%{transform:translateY(-20px) scale(1.1);opacity:1;}100%{transform:translateY(-220px) scale(1);opacity:0;}}
+  .float-reaction{position:absolute;bottom:70px;width:32px;height:32px;z-index:20;pointer-events:none;animation:float-up 1.8s ease-out forwards;}
+  .header{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid #ececec;flex-shrink:0;}
+  .back{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;color:#3f3f46;text-decoration:none;transition:background .15s ease;}
+  .back:hover{background:#f4f4f5;}
+  .title{font-weight:700;font-size:14px;color:#0a0a0a;letter-spacing:-0.01em;flex:1;}
+  .copy-btn{display:flex;align-items:center;gap:5px;padding:6px 11px;border-radius:20px;border:none;cursor:pointer;background:#eff6ff;color:#2563eb;font-size:11px;font-weight:600;white-space:nowrap;flex-shrink:0;transition:background .15s ease;}
+  .copy-btn:hover{background:#dbeafe;}
+  .leave-btn{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;border:none;cursor:pointer;background:transparent;color:#dc2626;flex-shrink:0;transition:background .15s ease;}
+  .leave-btn:hover{background:#fef2f2;}
+  .status-bar{display:flex;align-items:center;gap:8px;padding:8px 18px;border-bottom:1px solid #ececec;flex-shrink:0;background:#fafafa;}
+  .status-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+  .status-title{font-size:11.5px;color:#3f3f46;font-weight:500;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .status-time{font-size:11px;color:#a1a1aa;font-weight:500;flex-shrink:0;}
+  .self-controls{display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:4px;}
+  .self-btn{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:none;cursor:pointer;}
+  .hint-overlay{position:absolute;inset:0;background:rgba(10,10,10,.45);display:flex;align-items:center;justify-content:center;z-index:10;transition:opacity .28s ease;}
+  .hint-card{width:280px;background:#fff;border-radius:16px;padding:22px 20px;box-shadow:0 20px 40px rgba(0,0,0,.25);text-align:center;transition:transform .28s cubic-bezier(.4,0,.2,1),opacity .28s ease;}
+  .hint-icon{width:44px;height:44px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;}
+  .hint-title{margin:0 0 14px;font-size:14.5px;font-weight:700;color:#0a0a0a;letter-spacing:-.01em;}
+  .hint-link-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .hint-link{flex:1;min-width:0;padding:9px 10px;border-radius:8px;background:#fafafa;border:1px solid #ececec;font-size:12px;color:#52525b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;}
+  .hint-copy-btn{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:8px;border:none;cursor:pointer;color:#fff;background:linear-gradient(to bottom,#3b82f6,#1d4ed8);box-shadow:0 1px 2px rgba(0,0,0,.1),inset 0 1px 0 rgba(255,255,255,.25);}
+  .hint-close{width:100%;box-sizing:border-box;padding:9px 14px;border-radius:8px;border:1px solid #e4e4e7;background:#fff;cursor:pointer;color:#3f3f46;font-size:12.5px;font-weight:600;transition:background .15s ease;}
+  .hint-close:hover{background:#fafafa;}
+  .members-strip,.members-grid-wrap{padding:10px 18px;flex-shrink:0;border-bottom:1px solid #ececec;}
+  .strip-row{display:flex;gap:10px;overflow-x:auto;padding-bottom:2px;}
+  .strip-tile{flex-shrink:0;width:104px;text-align:center;}
+  .strip-video{width:104px;height:78px;border-radius:10px;background:#18181b;position:relative;overflow:hidden;margin-bottom:4px;}
+  .strip-video img{width:100%;height:100%;object-fit:cover;}
+  .mute-btn-sm{position:absolute;bottom:4px;right:4px;width:26px;height:26px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .strip-name{font-size:11px;color:#52525b;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;}
+  .sync-badge-inline{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:1px;}
+  .sync-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;background:#f59e0b;}
+  .sync-text{font-size:9.5px;color:#a1a1aa;}
+  .members-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+  .grid-tile{width:100%;aspect-ratio:4/3;border-radius:12px;background:#18181b;position:relative;overflow:hidden;}
+  .grid-tile img{width:100%;height:100%;object-fit:cover;}
+  .grid-name-bar{position:absolute;left:0;right:0;bottom:0;padding:16px 8px 6px;background:linear-gradient(to top,rgba(0,0,0,.65),rgba(0,0,0,0));display:flex;align-items:center;gap:5px;}
+  .grid-name{font-size:11.5px;color:#fff;font-weight:600;flex:1;text-shadow:0 1px 2px rgba(0,0,0,.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .host-badge{font-size:8.5px;font-weight:600;color:#fff;background:rgba(37,99,235,.9);padding:2px 6px;border-radius:10px;flex-shrink:0;}
+  .sync-badge-overlay{position:absolute;top:6px;left:6px;display:flex;align-items:center;gap:4px;padding:2px 7px 2px 6px;border-radius:10px;background:rgba(0,0,0,.55);}
+  .sync-badge-overlay .sync-text{font-size:9px;color:#fff;font-weight:500;}
+  .mute-btn-grid{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .chat-area{flex:1;min-height:0;display:flex;flex-direction:column;}
+  .chat-scroll{flex:1;min-height:0;overflow-y:auto;padding:12px 18px;display:flex;flex-direction:column;gap:10px;}
+  .system-msg{display:flex;align-items:center;justify-content:center;gap:6px;padding:2px 0;}
+  .system-dot{width:3px;height:3px;border-radius:50%;background:#d4d4d8;flex-shrink:0;}
+  .system-text{font-size:11px;color:#a1a1aa;font-style:italic;text-align:center;}
+  .chat-msg{display:flex;gap:8px;align-items:flex-start;}
+  .chat-avatar{width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0;margin-top:1px;}
+  .chat-body{flex:1;min-width:0;}
+  .chat-meta{display:flex;align-items:baseline;gap:6px;}
+  .chat-name{font-size:12px;font-weight:600;color:#0a0a0a;}
+  .chat-time{font-size:10.5px;color:#a1a1aa;}
+  .chat-text{margin:2px 0 0;font-size:12.5px;color:#3f3f46;line-height:1.45;}
+  .typing{display:flex;align-items:center;gap:6px;padding:0 18px 6px;flex-shrink:0;}
+  .typing span{font-size:11.5px;color:#a1a1aa;font-style:italic;}
+  .composer{position:relative;display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid #ececec;flex-shrink:0;}
+  .reaction-picker{position:absolute;bottom:calc(100% + 6px);left:18px;right:18px;display:flex;align-items:center;gap:4px;background:#fff;border:1px solid #ececec;border-radius:20px;padding:6px;box-shadow:0 4px 14px rgba(0,0,0,.1);}
+  .reaction-picker button{width:30px;height:30px;border-radius:50%;border:none;background:transparent;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;transition:background .15s ease;}
+  .reaction-picker button:hover{background:#fafafa;}
+  .reaction-picker img{width:100%;height:100%;object-fit:contain;}
+  .react-toggle{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;border:1px solid #e4e4e7;background:#fff;cursor:pointer;color:#3f3f46;transition:background .15s ease;}
+  .react-toggle:hover{background:#fafafa;}
+  .msg-input{flex:1;min-width:0;padding:9px 12px;border-radius:9px;border:1px solid #e4e4e7;font-size:12.5px;font-family:inherit;outline:none;color:#0a0a0a;}
+  .msg-input:focus{border-color:#93c5fd;}
+  .send-btn{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;border:none;cursor:pointer;color:#fff;background:linear-gradient(to bottom,#3b82f6,#1d4ed8);box-shadow:0 1px 2px rgba(0,0,0,.1),inset 0 1px 0 rgba(255,255,255,.25);}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+  <div class="popup" id="popup">
+    <div class="header">
+      <a href="party-setup-standalone.html" class="back">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </a>
+      <span class="title">Watch party</span>
+      <button type="button" class="copy-btn" id="invite-btn">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="8" y="2" width="8" height="4" rx="1" stroke="currentColor" stroke-width="2"></rect><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" stroke="currentColor" stroke-width="2"></path></svg>
+        <span id="copy-label">Copy invite link</span>
+      </button>
+      <button type="button" class="leave-btn" id="leave-btn" aria-label="Leave party">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M16 17l5-5-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </button>
+    </div>
+
+    <div class="status-bar">
+      <span class="status-dot" id="play-dot" style="background:#22c55e;"></span>
+      <span class="status-title">The Great Adventure — Ep. 4</span>
+      <span class="status-time"><span id="play-state">Playing</span> · 12:04</span>
+      <div class="self-controls">
+        <button type="button" class="self-btn" id="self-mic-btn"></button>
+        <button type="button" class="self-btn" id="self-cam-btn"></button>
+      </div>
+    </div>
+
+    <div class="hint-overlay" id="hint-overlay">
+      <div class="hint-card" id="hint-card">
+        <div class="hint-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="8" y="2" width="8" height="4" rx="1" stroke="#2563eb" stroke-width="2"></rect><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" stroke="#2563eb" stroke-width="2"></path></svg>
+        </div>
+        <h3 class="hint-title">Invite your friends</h3>
+        <div class="hint-link-row">
+          <div class="hint-link">syncron.app/room/x8vQ2n</div>
+          <button type="button" class="hint-copy-btn" id="hint-copy-btn" aria-label="Copy invite link">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="8" y="2" width="8" height="4" rx="1" stroke="#fff" stroke-width="2"></rect><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" stroke="#fff" stroke-width="2"></path></svg>
+          </button>
+        </div>
+        <button type="button" class="hint-close" id="hint-close-btn">Close</button>
+      </div>
+    </div>
+
+    <div class="members-strip hidden" id="members-strip">
+      <div class="strip-row" id="strip-row"></div>
+    </div>
+    <div class="members-grid-wrap" id="members-grid-wrap">
+      <div class="members-grid" id="members-grid"></div>
+    </div>
+
+    <div class="chat-area">
+      <div class="chat-scroll" id="chat-scroll"></div>
+      <div class="typing" id="typing-indicator"><span>Alex is typing…</span></div>
+      <div class="composer">
+        <div class="reaction-picker hidden" id="reaction-picker"></div>
+        <button type="button" class="react-toggle" id="react-toggle" aria-label="React">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path><circle cx="9" cy="9.5" r="1" fill="currentColor"></circle><circle cx="15" cy="9.5" r="1" fill="currentColor"></circle></svg>
+        </button>
+        <input type="text" placeholder="Send a message" class="msg-input" id="msg-input">
+        <button type="button" class="send-btn" id="send-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const MIC_ICON_OFF = c => `<svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M15 9.4V5a3 3 0 00-5.7-1.3" stroke="${c}" stroke-width="1.8" stroke-linecap="round"></path><path d="M9 9v1a3 3 0 004.6 2.5" stroke="${c}" stroke-width="1.8" stroke-linecap="round"></path><path d="M5 10a7 7 0 0010.5 6.1" stroke="${c}" stroke-width="1.8" stroke-linecap="round"></path><path d="M19 10a6.9 6.9 0 01-.3 2" stroke="${c}" stroke-width="1.8" stroke-linecap="round"></path><path d="M12 17v3.5" stroke="${c}" stroke-width="1.8" stroke-linecap="round"></path><path d="M3 3L21 21" stroke="${c}" stroke-width="1.8" stroke-linecap="round"></path></svg>`;
+  const MIC_ICON_ON = c => `<svg width="11" height="11" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="${c}" stroke-width="1.8"></rect><path d="M5 11a7 7 0 0014 0" stroke="${c}" stroke-width="1.8" stroke-linecap="round"></path><path d="M12 18v3.5" stroke="${c}" stroke-width="1.8" stroke-linecap="round"></path></svg>`;
+  const CAM_ICON_OFF = c => `<svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M16 8l4-2v12l-4-2" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"></path><rect x="3" y="6" width="13" height="12" rx="2" stroke="${c}" stroke-width="1.8"></rect><path d="M3 3L21 21" stroke="${c}" stroke-width="1.8" stroke-linecap="round"></path></svg>`;
+  const CAM_ICON_ON = c => `<svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M16 8l4-2v12l-4-2" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"></path><rect x="3" y="6" width="13" height="12" rx="2" stroke="${c}" stroke-width="1.8"></rect></svg>`;
+
+  let members = [
+    { name: 'You', avatar: 'https://tapback.co/api/avatar/nova.webp', muted: true, isHost: true, synced: true },
+    { name: 'Alex', avatar: 'https://tapback.co/api/avatar/koda.webp', muted: true, isHost: false, synced: false },
+    { name: 'Priya', avatar: 'https://tapback.co/api/avatar/luma.webp', muted: true, isHost: false, synced: true },
+    { name: 'Sam', avatar: 'https://tapback.co/api/avatar/ember.webp', muted: false, isHost: false, synced: true },
+    { name: 'Riley', avatar: 'https://tapback.co/api/avatar/sable.webp', muted: true, isHost: false, synced: true }
+  ];
+  const MEMBER_COUNT = 2;
+  members = members.slice(0, MEMBER_COUNT);
+
+  let chatMessages = [
+    { type: 'system', text: 'Alex joined the party' },
+    { type: 'chat', name: 'Alex', avatar: 'https://tapback.co/api/avatar/koda.webp', time: '2:41 PM', text: 'okay ready when you are' },
+    { type: 'chat', name: 'You', avatar: 'https://tapback.co/api/avatar/nova.webp', time: '2:41 PM', text: 'same, starting in 3... 2... 1' },
+    { type: 'system', text: 'You paused the video at 12:04' },
+    { type: 'chat', name: 'Alex', avatar: 'https://tapback.co/api/avatar/koda.webp', time: '2:42 PM', text: 'this scene is so good' },
+    { type: 'system', text: 'Alex skipped to 14:32' }
+  ];
+
+  const REACTIONS = [
+    'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Hand%20gestures/Thumbs%20Up.png',
+    'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Smilies/Face%20with%20Tears%20of%20Joy.png',
+    'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Smilies/Red%20Heart.png',
+    'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Activities/Party%20Popper.png',
+    'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Smilies/Face%20Screaming%20in%20Fear.png',
+    'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Smilies/Loudly%20Crying%20Face.png',
+    'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Smilies/Face%20with%20Open%20Mouth.png',
+    'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Nature/Fire.png'
+  ];
+
+  let selfMuted = true, selfVideoOff = false;
+
+  function renderSelfControls(){
+    const micBtn = document.getElementById('self-mic-btn');
+    const camBtn = document.getElementById('self-cam-btn');
+    micBtn.style.background = selfMuted ? 'rgba(220,38,38,0.9)' : '#eff6ff';
+    micBtn.innerHTML = selfMuted ? MIC_ICON_OFF('#fff') : MIC_ICON_ON('#2563eb');
+    camBtn.style.background = selfVideoOff ? 'rgba(220,38,38,0.9)' : '#eff6ff';
+    camBtn.innerHTML = selfVideoOff ? CAM_ICON_OFF('#fff') : CAM_ICON_ON('#2563eb');
+  }
+  document.getElementById('self-mic-btn').addEventListener('click', () => { selfMuted = !selfMuted; renderSelfControls(); });
+  document.getElementById('self-cam-btn').addEventListener('click', () => { selfVideoOff = !selfVideoOff; renderSelfControls(); });
+  renderSelfControls();
+
+  function renderMembers(){
+    const isCompact = members.length > 4;
+    document.getElementById('members-strip').classList.toggle('hidden', !isCompact);
+    document.getElementById('members-grid-wrap').classList.toggle('hidden', isCompact);
+
+    if (isCompact) {
+      const row = document.getElementById('strip-row');
+      row.innerHTML = '';
+      members.forEach((m, i) => {
+        const tile = document.createElement('div');
+        tile.className = 'strip-tile';
+        tile.innerHTML = `
+          <div class="strip-video">
+            <img src="${m.avatar}" alt="${m.name}">
+            <button type="button" class="mute-btn-sm" data-idx="${i}" style="background:${m.muted ? 'rgba(220,38,38,0.85)' : 'rgba(0,0,0,0.55)'};">${m.muted ? MIC_ICON_OFF('#fff') : MIC_ICON_ON('#fff')}</button>
+          </div>
+          <span class="strip-name">${m.name}</span>
+          ${!m.synced ? `<div class="sync-badge-inline"><span class="sync-dot"></span><span class="sync-text">Buffering…</span></div>` : ''}
+        `;
+        row.appendChild(tile);
+      });
+    } else {
+      const grid = document.getElementById('members-grid');
+      grid.innerHTML = '';
+      members.forEach((m, i) => {
+        const tile = document.createElement('div');
+        tile.className = 'grid-tile';
+        tile.innerHTML = `
+          <img src="${m.avatar}" alt="${m.name}">
+          <div class="grid-name-bar">
+            <span class="grid-name">${m.name}</span>
+            ${m.isHost ? '<span class="host-badge">Host</span>' : ''}
+          </div>
+          ${!m.synced ? `<div class="sync-badge-overlay"><span class="sync-dot"></span><span class="sync-text">Buffering…</span></div>` : ''}
+          <button type="button" class="mute-btn-grid" data-idx="${i}" style="background:${m.muted ? 'rgba(220,38,38,0.85)' : 'rgba(0,0,0,0.55)'};">${m.muted ? MIC_ICON_OFF('#fff') : MIC_ICON_ON('#fff')}</button>
+        `;
+        grid.appendChild(tile);
+      });
+    }
+    document.querySelectorAll('.mute-btn-sm, .mute-btn-grid').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = +btn.dataset.idx;
+        members[idx].muted = !members[idx].muted;
+        renderMembers();
+      });
+    });
+  }
+  renderMembers();
+
+  function renderChat(){
+    const scroll = document.getElementById('chat-scroll');
+    scroll.innerHTML = '';
+    chatMessages.forEach(m => {
+      const el = document.createElement('div');
+      if (m.type === 'system') {
+        el.className = 'system-msg';
+        el.innerHTML = `<span class="system-dot"></span><span class="system-text">${m.text}</span><span class="system-dot"></span>`;
+      } else {
+        el.className = 'chat-msg';
+        el.innerHTML = `
+          <img class="chat-avatar" src="${m.avatar}" alt="${m.name}">
+          <div class="chat-body">
+            <div class="chat-meta"><span class="chat-name">${m.name}</span><span class="chat-time">${m.time}</span></div>
+            <p class="chat-text">${m.text}</p>
+          </div>`;
+      }
+      scroll.appendChild(el);
+    });
+    scroll.scrollTop = scroll.scrollHeight;
+  }
+  renderChat();
+
+  document.getElementById('send-btn').addEventListener('click', sendMessage);
+  document.getElementById('msg-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+  function sendMessage(){
+    const input = document.getElementById('msg-input');
+    const text = input.value.trim();
+    if (!text) return;
+    chatMessages.push({ type: 'chat', name: 'You', avatar: 'https://tapback.co/api/avatar/nova.webp', time: 'Now', text });
+    input.value = '';
+    renderChat();
+  }
+
+  const reactionPicker = document.getElementById('reaction-picker');
+  document.getElementById('react-toggle').addEventListener('click', () => reactionPicker.classList.toggle('hidden'));
+  reactionPicker.innerHTML = REACTIONS.map(icon => `<button type="button"><img src="${icon}" alt="reaction"></button>`).join('');
+  reactionPicker.querySelectorAll('button').forEach((btn, i) => {
+    btn.addEventListener('click', () => spawnReaction(REACTIONS[i]));
+  });
+  function spawnReaction(icon){
+    const el = document.createElement('img');
+    el.src = icon; el.className = 'float-reaction';
+    el.style.left = (15 + Math.random() * 60) + '%';
+    document.getElementById('popup').appendChild(el);
+    setTimeout(() => el.remove(), 1800);
+  }
+
+  function copyLink(labelEl){
+    const original = labelEl.textContent;
+    labelEl.textContent = 'Copied!';
+    setTimeout(() => { labelEl.textContent = original; }, 1500);
+  }
+  document.getElementById('invite-btn').addEventListener('click', () => copyLink(document.getElementById('copy-label')));
+  document.getElementById('hint-copy-btn').addEventListener('click', () => {});
+
+  document.getElementById('leave-btn').addEventListener('click', () => { window.location.href = 'home-standalone.html'; });
+
+  const hintOverlay = document.getElementById('hint-overlay');
+  const hintCard = document.getElementById('hint-card');
+  const inviteBtn = document.getElementById('invite-btn');
+  if (localStorage.getItem('syncron_invite_hint_seen')) {
+    hintOverlay.classList.add('hidden');
+  }
+  document.getElementById('hint-close-btn').addEventListener('click', () => {
+    const btnRect = inviteBtn.getBoundingClientRect();
+    const cardRect = hintCard.getBoundingClientRect();
+    const dx = (btnRect.left + btnRect.width/2) - (cardRect.left + cardRect.width/2);
+    const dy = (btnRect.top + btnRect.height/2) - (cardRect.top + cardRect.height/2);
+    hintCard.style.transform = `translate(${dx}px,${dy}px) scale(0.05)`;
+    hintCard.style.opacity = '0';
+    hintOverlay.style.opacity = '0';
+    setTimeout(() => {
+      localStorage.setItem('syncron_invite_hint_seen', '1');
+      hintOverlay.classList.add('hidden');
+    }, 280);
+  });
+</script>
+</body>
+</html>
