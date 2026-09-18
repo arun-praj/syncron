@@ -1,4 +1,15 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+/* Self-hosted (bundled) Inter, not fetched from Google Fonts at runtime.
+   The old @import worked in the popup/side panel but silently failed
+   inside the YouTube in-page sidebar — a content script's injected
+   styles are still subject to the host page's CSP, and youtube.com's
+   style-src/font-src blocked the cross-origin fetch, leaving text to
+   fall back to the OS default sans-serif (visibly heavier/darker than
+   Inter at the same declared weight). Bundling the font file removes
+   that runtime fetch entirely, so it's identical in every context. */
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-500.css";
+@import "@fontsource/inter/latin-600.css";
+@import "@fontsource/inter/latin-700.css";
 
 @tailwind base;
 @tailwind components;
