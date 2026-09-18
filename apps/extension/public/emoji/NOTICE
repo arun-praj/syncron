@@ -1,0 +1,7 @@
+These emoji icons are Microsoft's Fluent Emoji ("modern" style):
+https://github.com/microsoft/fluentui-emoji
+
+Obtained via the fluentui-emoji npm package:
+https://www.npmjs.com/package/fluentui-emoji
+
+Licensed under the MIT License.

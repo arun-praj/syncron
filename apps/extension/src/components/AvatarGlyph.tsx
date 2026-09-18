@@ -1,11 +1,16 @@
+import { browser, type PublicPath } from "wxt/browser";
+
 import { avatarId } from "../../../../packages/protocol/src/index.js";
 
 // Bundled Tapback-Memoji snapshots. IDs are the source-of-truth
 // @syncron/protocol avatarId enum ("1"-"30").
 export const AVATAR_IDS = avatarId.options;
 
+// Resolved via runtime.getURL (not a plain relative path) since this can
+// render inside the YouTube in-page sidebar, where a relative src would
+// resolve against youtube.com's origin instead of the extension's.
 export function avatarGlyphSrc(id: string): string {
-  return `/static/avatars/${id}.webp`;
+  return browser.runtime.getURL(`/static/avatars/${id}.webp` as PublicPath);
 }
 
 export function AvatarGlyph({

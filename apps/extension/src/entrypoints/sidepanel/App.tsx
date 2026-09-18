@@ -109,5 +109,9 @@ export default function App() {
     );
   }
 
-  return <div className="h-full overflow-y-auto bg-bg font-sans">{content}</div>;
+  return (
+    <div className="h-full overflow-y-auto bg-bg font-sans">
+      <div className="mx-auto h-full max-w-[400px]">{content}</div>
+    </div>
+  );
 }
