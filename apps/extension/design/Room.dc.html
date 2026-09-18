@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body{margin:0;background:#fff;}@keyframes float-up{0%{transform:translateY(0) scale(0.6);opacity:0;}15%{transform:translateY(-20px) scale(1.1);opacity:1;}100%{transform:translateY(-220px) scale(1);opacity:0;}}</style>
+</helmet>
+<div style="width:400px;height:600px;position:relative;overflow:hidden;background:#ffffff;font-family:'Inter',sans-serif;box-sizing:border-box;display:flex;flex-direction:column;">
+  <sc-for list="{{ floatingReactions }}" as="r" hint-placeholder-count="0">
+    <img src="{{ r.icon }}" alt="reaction" style="position:absolute;bottom:70px;left:{{ r.left }}%;width:32px;height:32px;z-index:20;pointer-events:none;animation:float-up 1.8s ease-out forwards;" />
+  </sc-for>
+  <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid #ececec;flex-shrink:0;">
+    <a href="PartySetup.dc.html" style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;color:#3f3f46;text-decoration:none;" style-hover="background:#f4f4f5;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </a>
+    <span style="font-weight:700;font-size:14px;color:#0a0a0a;letter-spacing:-0.01em;flex:1;">Watch party</span>
+    <button type="button" ref="{{ inviteBtnRef }}" onClick="{{ copyLink }}" style="display:flex;align-items:center;gap:5px;padding:6px 11px;border-radius:20px;border:none;cursor:pointer;background:#eff6ff;color:#2563eb;font-size:11px;font-weight:600;white-space:nowrap;flex-shrink:0;" style-hover="background:#dbeafe;">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="8" y="2" width="8" height="4" rx="1" stroke="currentColor" stroke-width="2"></rect><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" stroke="currentColor" stroke-width="2"></path></svg>
+      {{ copyLabel }}
+    </button>
+    <button type="button" onClick="{{ leaveParty }}" aria-label="Leave party" style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;border:none;cursor:pointer;background:transparent;color:#dc2626;flex-shrink:0;" style-hover="background:#fef2f2;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M16 17l5-5-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </button>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:8px;padding:8px 18px;border-bottom:1px solid #ececec;flex-shrink:0;background:#fafafa;">
+    <span style="width:6px;height:6px;border-radius:50%;background:{{ playStateColor }};flex-shrink:0;"></span>
+    <span style="font-size:11.5px;color:#3f3f46;font-weight:500;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ videoTitle }}</span>
+    <span style="font-size:11px;color:#a1a1aa;font-weight:500;flex-shrink:0;">{{ playStateLabel }} · {{ currentTime }}</span>
+    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:4px;">
+      <button type="button" onClick="{{ toggleSelfMute }}" style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:none;cursor:pointer;background:{{ selfMicBg }};">
+        <sc-if value="{{ selfMuted }}" hint-placeholder-val="{{ false }}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M15 9.4V5a3 3 0 00-5.7-1.3" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M9 9v1a3 3 0 004.6 2.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M5 10a7 7 0 0010.5 6.1" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M19 10a6.9 6.9 0 01-.3 2" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M12 17v3.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M3 3L21 21" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path></svg>
+        </sc-if>
+        <sc-if value="{{ selfNotMuted }}" hint-placeholder-val="{{ true }}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="{{ selfMicIconColor }}" stroke-width="1.8"></rect><path d="M5 11a7 7 0 0014 0" stroke="{{ selfMicIconColor }}" stroke-width="1.8" stroke-linecap="round"></path><path d="M12 18v3.5" stroke="{{ selfMicIconColor }}" stroke-width="1.8" stroke-linecap="round"></path></svg>
+        </sc-if>
+      </button>
+      <button type="button" onClick="{{ toggleSelfVideo }}" style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:none;cursor:pointer;background:{{ selfCamBg }};">
+        <sc-if value="{{ selfVideoOff }}" hint-placeholder-val="{{ false }}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M16 8l4-2v12l-4-2" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"></path><rect x="3" y="6" width="13" height="12" rx="2" stroke="#fff" stroke-width="1.8"></rect><path d="M3 3L21 21" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path></svg>
+        </sc-if>
+        <sc-if value="{{ selfVideoOn }}" hint-placeholder-val="{{ true }}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M16 8l4-2v12l-4-2" stroke="{{ selfCamIconColor }}" stroke-width="1.8" stroke-linejoin="round"></path><rect x="3" y="6" width="13" height="12" rx="2" stroke="{{ selfCamIconColor }}" stroke-width="1.8"></rect></svg>
+        </sc-if>
+      </button>
+    </div>
+  </div>
+
+  <sc-if value="{{ showHint }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(10,10,10,0.45);display:flex;align-items:center;justify-content:center;z-index:10;opacity:{{ hintOverlayOpacity }};transition:opacity 0.28s ease;">
+      <div ref="{{ hintCardRef }}" style="width:280px;background:#ffffff;border-radius:16px;padding:22px 20px;box-shadow:0 20px 40px rgba(0,0,0,0.25);text-align:center;transform:{{ hintCardTransform }};opacity:{{ hintCardOpacity }};transition:transform 0.28s cubic-bezier(0.4,0,0.2,1),opacity 0.28s ease;">
+        <div style="width:44px;height:44px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="8" y="2" width="8" height="4" rx="1" stroke="#2563eb" stroke-width="2"></rect><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" stroke="#2563eb" stroke-width="2"></path></svg>
+        </div>
+        <h3 style="margin:0 0 14px;font-size:14.5px;font-weight:700;color:#0a0a0a;letter-spacing:-0.01em;">Invite your friends</h3>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <div style="flex:1;min-width:0;padding:9px 10px;border-radius:8px;background:#fafafa;border:1px solid #ececec;font-size:12px;color:#52525b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;">{{ inviteLink }}</div>
+          <button type="button" onClick="{{ copyLink }}" aria-label="Copy invite link" style="flex-shrink:0;display:flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:8px;border:none;cursor:pointer;color:#ffffff;background:linear-gradient(to bottom,#3b82f6,#1d4ed8);box-shadow:0 1px 2px rgba(0,0,0,0.1),inset 0 1px 0 rgba(255,255,255,0.25);">
+            <sc-if value="{{ copyLabel }}" hint-placeholder-val="{{ true }}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="8" y="2" width="8" height="4" rx="1" stroke="#fff" stroke-width="2"></rect><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" stroke="#fff" stroke-width="2"></path></svg>
+            </sc-if>
+          </button>
+        </div>
+        <button type="button" onClick="{{ closeHint }}" style="width:100%;box-sizing:border-box;padding:9px 14px;border-radius:8px;border:1px solid #e4e4e7;background:#ffffff;cursor:pointer;color:#3f3f46;font-size:12.5px;font-weight:600;" style-hover="background:#fafafa;">Close</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isCompact }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:10px 18px;flex-shrink:0;border-bottom:1px solid #ececec;">
+      <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:2px;">
+        <sc-for list="{{ members }}" as="member" hint-placeholder-count="5">
+          <div style="flex-shrink:0;width:104px;text-align:center;">
+            <div style="width:104px;height:78px;border-radius:10px;background:#18181b;position:relative;overflow:hidden;margin-bottom:4px;">
+              <img src="{{ member.avatar }}" alt="{{ member.name }}" style="width:100%;height:100%;object-fit:cover;" />
+              <button type="button" onClick="{{ member.toggleMute }}" style="position:absolute;bottom:4px;right:4px;width:26px;height:26px;border-radius:50%;background:{{ member.muteBg }};border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;">
+                <sc-if value="{{ member.muted }}" hint-placeholder-val="{{ false }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 9.4V5a3 3 0 00-5.7-1.3" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M9 9v1a3 3 0 004.6 2.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M5 10a7 7 0 0010.5 6.1" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M19 10a6.9 6.9 0 01-.3 2" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M12 17v3.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M3 3L21 21" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path></svg>
+                </sc-if>
+                <sc-if value="{{ member.notMuted }}" hint-placeholder-val="{{ true }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="#fff" stroke-width="1.8"></rect><path d="M5 11a7 7 0 0014 0" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M12 18v3.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path></svg>
+                </sc-if>
+              </button>
+            </div>
+            <span style="font-size:11px;color:#52525b;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;">{{ member.name }}</span>
+            <sc-if value="{{ member.notSynced }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;justify-content:center;gap:3px;margin-top:1px;">
+                <span style="width:5px;height:5px;border-radius:50%;background:{{ member.syncDotColor }};flex-shrink:0;"></span>
+                <span style="font-size:9.5px;color:#a1a1aa;">{{ member.syncLabel }}</span>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isListMode }}" hint-placeholder-val="{{ true }}">
+    <div style="padding:10px 18px;flex-shrink:0;border-bottom:1px solid #ececec;">
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
+        <sc-for list="{{ members }}" as="member" hint-placeholder-count="2">
+          <div style="width:100%;aspect-ratio:4/3;border-radius:12px;background:#18181b;position:relative;overflow:hidden;">
+            <img src="{{ member.avatar }}" alt="{{ member.name }}" style="width:100%;height:100%;object-fit:cover;" />
+            <div style="position:absolute;left:0;right:0;bottom:0;padding:16px 8px 6px;background:linear-gradient(to top,rgba(0,0,0,0.65),rgba(0,0,0,0));display:flex;align-items:center;gap:5px;">
+              <span style="font-size:11.5px;color:#fff;font-weight:600;flex:1;text-shadow:0 1px 2px rgba(0,0,0,0.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ member.name }}</span>
+              <sc-if value="{{ member.isHost }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:8.5px;font-weight:600;color:#fff;background:rgba(37,99,235,0.9);padding:2px 6px;border-radius:10px;flex-shrink:0;">Host</span>
+              </sc-if>
+            </div>
+            <sc-if value="{{ member.notSynced }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;top:6px;left:6px;display:flex;align-items:center;gap:4px;padding:2px 7px 2px 6px;border-radius:10px;background:rgba(0,0,0,0.55);">
+                <span style="width:5px;height:5px;border-radius:50%;background:{{ member.syncDotColor }};flex-shrink:0;"></span>
+                <span style="font-size:9px;color:#fff;font-weight:500;">{{ member.syncLabel }}</span>
+              </div>
+            </sc-if>
+            <button type="button" onClick="{{ member.toggleMute }}" style="position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;background:{{ member.muteBg }};border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;">
+              <sc-if value="{{ member.muted }}" hint-placeholder-val="{{ false }}">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M15 9.4V5a3 3 0 00-5.7-1.3" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M9 9v1a3 3 0 004.6 2.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M5 10a7 7 0 0010.5 6.1" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M19 10a6.9 6.9 0 01-.3 2" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M12 17v3.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M3 3L21 21" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path></svg>
+              </sc-if>
+              <sc-if value="{{ member.notMuted }}" hint-placeholder-val="{{ true }}">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="#fff" stroke-width="1.8"></rect><path d="M5 11a7 7 0 0014 0" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path><path d="M12 18v3.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"></path></svg>
+              </sc-if>
+            </button>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;">
+    <div ref="{{ chatScrollRef }}" style="flex:1;min-height:0;overflow-y:auto;padding:12px 18px;display:flex;flex-direction:column;gap:10px;">
+      <sc-for list="{{ chatMessages }}" as="msg" hint-placeholder-count="4">
+        <sc-if value="{{ msg.isSystem }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;justify-content:center;gap:6px;padding:2px 0;">
+            <span style="width:3px;height:3px;border-radius:50%;background:#d4d4d8;flex-shrink:0;"></span>
+            <span style="font-size:11px;color:#a1a1aa;font-style:italic;text-align:center;">{{ msg.text }}</span>
+            <span style="width:3px;height:3px;border-radius:50%;background:#d4d4d8;flex-shrink:0;"></span>
+          </div>
+        </sc-if>
+        <sc-if value="{{ msg.isChat }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;gap:8px;align-items:flex-start;">
+            <img src="{{ msg.avatar }}" alt="{{ msg.name }}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0;margin-top:1px;" />
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:baseline;gap:6px;">
+                <span style="font-size:12px;font-weight:600;color:#0a0a0a;">{{ msg.name }}</span>
+                <span style="font-size:10.5px;color:#a1a1aa;">{{ msg.time }}</span>
+              </div>
+              <p style="margin:2px 0 0;font-size:12.5px;color:#3f3f46;line-height:1.45;">{{ msg.text }}</p>
+            </div>
+          </div>
+        </sc-if>
+      </sc-for>
+    </div>
+
+    <sc-if value="{{ isAlexTyping }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;align-items:center;gap:6px;padding:0 18px 6px;flex-shrink:0;">
+        <span style="font-size:11.5px;color:#a1a1aa;font-style:italic;">Alex is typing…</span>
+      </div>
+    </sc-if>
+
+    <div style="position:relative;display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid #ececec;flex-shrink:0;">
+      <sc-if value="{{ showReactionPicker }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;bottom:calc(100% + 6px);left:18px;right:18px;display:flex;align-items:center;gap:4px;background:#fff;border:1px solid #ececec;border-radius:20px;padding:6px;box-shadow:0 4px 14px rgba(0,0,0,0.1);">
+          <sc-for list="{{ reactions }}" as="emoji" hint-placeholder-count="4">
+            <button type="button" onClick="{{ emoji.send }}" style="width:30px;height:30px;border-radius:50%;border:none;background:transparent;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;" style-hover="background:#fafafa;">
+              <img src="{{ emoji.icon }}" alt="reaction" style="width:100%;height:100%;object-fit:contain;" />
+            </button>
+          </sc-for>
+        </div>
+      </sc-if>
+      <button type="button" onClick="{{ toggleReactionPicker }}" aria-label="React" style="flex-shrink:0;display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;border:1px solid #e4e4e7;background:#fff;cursor:pointer;color:#3f3f46;" style-hover="background:#fafafa;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path><circle cx="9" cy="9.5" r="1" fill="currentColor"></circle><circle cx="15" cy="9.5" r="1" fill="currentColor"></circle></svg>
+      </button>
+      <input type="text" placeholder="Send a message" value="{{ draft }}" onInput="{{ updateDraft }}" onKeyDown="{{ handleKeyDown }}" style="flex:1;min-width:0;padding:9px 12px;border-radius:9px;border:1px solid #e4e4e7;font-size:12.5px;font-family:inherit;outline:none;color:#0a0a0a;" style-focus="border-color:#93c5fd;" />
+      <button type="button" onClick="{{ sendMessage }}" style="flex-shrink:0;display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;border:none;cursor:pointer;color:#ffffff;background:linear-gradient(to bottom,#3b82f6,#1d4ed8);box-shadow:0 1px 2px rgba(0,0,0,0.1),inset 0 1px 0 rgba(255,255,255,0.25);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:400,&quot;height&quot;:600},&quot;memberCount&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2,&quot;min&quot;:2,&quot;max&quot;:5,&quot;step&quot;:1,&quot;tsType&quot;:&quot;number&quot;}}">
+const ALL_MEMBERS = [
+  { name: 'You', avatar: 'https://tapback.co/api/avatar/nova.webp', muted: true, isHost: true, synced: true },
+  { name: 'Alex', avatar: 'https://tapback.co/api/avatar/koda.webp', muted: true, isHost: false, synced: false },
+  { name: 'Priya', avatar: 'https://tapback.co/api/avatar/luma.webp', muted: true, isHost: false, synced: true },
+  { name: 'Sam', avatar: 'https://tapback.co/api/avatar/ember.webp', muted: false, isHost: false, synced: true },
+  { name: 'Riley', avatar: 'https://tapback.co/api/avatar/sable.webp', muted: true, isHost: false, synced: true }
+];
+
+const CHAT_MESSAGES = [
+  { type: 'system', text: 'Alex joined the party' },
+  { type: 'chat', name: 'Alex', avatar: 'https://tapback.co/api/avatar/koda.webp', time: '2:41 PM', text: 'okay ready when you are' },
+  { type: 'chat', name: 'You', avatar: 'https://tapback.co/api/avatar/nova.webp', time: '2:41 PM', text: 'same, starting in 3... 2... 1' },
+  { type: 'system', text: 'You paused the video at 12:04' },
+  { type: 'chat', name: 'Alex', avatar: 'https://tapback.co/api/avatar/koda.webp', time: '2:42 PM', text: 'this scene is so good' },
+  { type: 'system', text: 'Alex skipped to 14:32' }
+];
+
+class Component extends DCLogic {
+  state = {
+    copyLabel: 'Copy invite link', draft: '', memberCount: 2, chatMessages: CHAT_MESSAGES,
+    members: ALL_MEMBERS.map(m => ({ ...m })),
+    selfMuted: true, selfVideoOff: false,
+    videoTitle: 'The Great Adventure — Ep. 4', isPlaying: true, currentTime: '12:04', floatingReactions: [], showReactionPicker: false, isAlexTyping: true,
+    showHint: !localStorage.getItem('syncron_invite_hint_seen'),
+    hintClosing: false, hintTransform: 'translate(0px,0px) scale(1)', hintOpacity: 1, overlayOpacity: 1
+  };
+
+  inviteBtnRef = React.createRef();
+  hintCardRef = React.createRef();
+  chatScrollRef = React.createRef();
+
+  componentDidUpdate(prevProps, prevState) {
+    if (prevState.chatMessages !== this.state.chatMessages) {
+      requestAnimationFrame(() => {
+        if (this.chatScrollRef.current) {
+          this.chatScrollRef.current.scrollTop = this.chatScrollRef.current.scrollHeight;
+        }
+      });
+    }
+  }
+
+  componentDidMount() {
+    if (this.chatScrollRef.current) {
+      this.chatScrollRef.current.scrollTop = this.chatScrollRef.current.scrollHeight;
+    }
+  }
+
+  copyLink = () => {
+    this.setState({ copyLabel: 'Copied!' });
+    setTimeout(() => this.setState({ copyLabel: 'Copy invite link' }), 1500);
+  };
+
+  closeHint = () => {
+    const btn = this.inviteBtnRef.current;
+    const card = this.hintCardRef.current;
+    if (btn && card) {
+      const btnRect = btn.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      const btnCx = btnRect.left + btnRect.width / 2;
+      const btnCy = btnRect.top + btnRect.height / 2;
+      const cardCx = cardRect.left + cardRect.width / 2;
+      const cardCy = cardRect.top + cardRect.height / 2;
+      const dx = btnCx - cardCx;
+      const dy = btnCy - cardCy;
+      this.setState({ hintTransform: `translate(${dx}px,${dy}px) scale(0.05)`, hintOpacity: 0, overlayOpacity: 0 });
+    } else {
+      this.setState({ hintTransform: 'scale(0.05)', hintOpacity: 0, overlayOpacity: 0 });
+    }
+    setTimeout(() => {
+      localStorage.setItem('syncron_invite_hint_seen', '1');
+      this.setState({ showHint: false });
+    }, 280);
+  };
+
+  updateDraft = (e) => this.setState({ draft: e.target.value });
+
+  sendMessage = () => {
+    const text = this.state.draft.trim();
+    if (!text) return;
+    this.setState(s => ({
+      chatMessages: [...s.chatMessages, { type: 'chat', name: 'You', avatar: 'https://tapback.co/api/avatar/nova.webp', time: 'Now', text }],
+      draft: ''
+    }));
+  };
+
+  handleKeyDown = (e) => { if (e.key === 'Enter') this.sendMessage(); };
+
+  sendReaction = (icon) => {
+    const id = Math.random().toString(36).slice(2);
+    this.setState(s => ({ floatingReactions: [...s.floatingReactions, { id, icon, left: 15 + Math.random() * 60 }] }));
+    setTimeout(() => {
+      this.setState(s => ({ floatingReactions: s.floatingReactions.filter(r => r.id !== id) }));
+    }, 1800);
+  };
+
+  toggleReactionPicker = () => this.setState(s => ({ showReactionPicker: !s.showReactionPicker }));
+
+  leaveParty = () => { window.location.href = 'Home.dc.html'; };
+
+  toggleSelfMute = () => this.setState(s => ({ selfMuted: !s.selfMuted }));
+  toggleSelfVideo = () => this.setState(s => ({ selfVideoOff: !s.selfVideoOff }));
+
+  toggleMemberMute = (index) => {
+    this.setState(s => ({
+      members: s.members.map((m, i) => i === index ? { ...m, muted: !m.muted } : m)
+    }));
+  };
+
+  renderVals() {
+    const { copyLabel, draft, memberCount, showHint, hintTransform, hintOpacity, overlayOpacity, selfMuted, selfVideoOff, videoTitle, isPlaying, currentTime, floatingReactions } = this.state;
+    const chatMessages = this.state.chatMessages.map(m => ({ ...m, isSystem: m.type === 'system', isChat: m.type !== 'system' }));
+    const members = this.state.members.slice(0, memberCount).map((m, i) => ({
+      ...m,
+      toggleMute: () => this.toggleMemberMute(i),
+      muteBg: m.muted ? 'rgba(220,38,38,0.85)' : 'rgba(0,0,0,0.55)',
+      notMuted: !m.muted,
+      syncLabel: 'Buffering…',
+      syncDotColor: '#f59e0b',
+      synced: m.synced,
+      notSynced: !m.synced
+    }));
+    const isCompact = memberCount > 4;
+    return {
+      inviteLink: 'syncron.app/room/x8vQ2n',
+      copyLabel, copyLink: this.copyLink,
+      members,
+      memberCountLabel: `${members.length} watching`,
+      isCompact,
+      isListMode: !isCompact,
+      chatMessages, draft,
+      updateDraft: this.updateDraft, sendMessage: this.sendMessage, handleKeyDown: this.handleKeyDown,
+      inviteBtnRef: this.inviteBtnRef, hintCardRef: this.hintCardRef,
+      showHint, closeHint: this.closeHint,
+      hintCardTransform: hintTransform, hintCardOpacity: hintOpacity, hintOverlayOpacity: overlayOpacity,
+      selfMuted, selfNotMuted: !selfMuted, toggleSelfMute: this.toggleSelfMute,
+      selfMicBg: selfMuted ? 'rgba(220,38,38,0.9)' : '#eff6ff',
+      selfMicIconColor: selfMuted ? '#fff' : '#2563eb',
+      selfVideoOff, selfVideoOn: !selfVideoOff, toggleSelfVideo: this.toggleSelfVideo,
+      selfCamBg: selfVideoOff ? 'rgba(220,38,38,0.9)' : '#eff6ff',
+      selfCamIconColor: selfVideoOff ? '#fff' : '#2563eb',
+      leaveParty: this.leaveParty,
+      reactions: [
+        { icon: 'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Hand%20gestures/Thumbs%20Up.png' },
+        { icon: 'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Smilies/Face%20with%20Tears%20of%20Joy.png' },
+        { icon: 'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Smilies/Red%20Heart.png' },
+        { icon: 'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Activities/Party%20Popper.png' },
+        { icon: 'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Smilies/Face%20Screaming%20in%20Fear.png' },
+        { icon: 'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Smilies/Loudly%20Crying%20Face.png' },
+        { icon: 'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Smilies/Face%20with%20Open%20Mouth.png' },
+        { icon: 'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Microsoft-Teams-Animated-Emojis/master/Emojis/Nature/Fire.png' }
+      ].map(r => ({ ...r, send: () => this.sendReaction(r.icon) })),
+      videoTitle, currentTime,
+      playStateLabel: isPlaying ? 'Playing' : 'Paused',
+      playStateColor: isPlaying ? '#22c55e' : '#a1a1aa',
+      floatingReactions,
+      chatScrollRef: this.chatScrollRef,
+      showReactionPicker: this.state.showReactionPicker,
+      toggleReactionPicker: this.toggleReactionPicker,
+      isAlexTyping: this.state.isAlexTyping
+    };
+  }
+}
+</script>
+</body>
+</html>

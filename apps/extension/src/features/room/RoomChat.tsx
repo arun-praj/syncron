@@ -92,9 +92,9 @@ export function RoomChat() {
         </div>
       </div>
 
-      <div className="relative flex flex-shrink-0 items-center gap-2 border-t border-border p-3">
+      <div className="relative flex flex-shrink-0 items-center gap-2 border-t border-border px-[18px] py-3">
         {showReactionPicker && (
-          <div className="absolute bottom-[calc(100%+6px)] left-3 right-3 flex items-center gap-1 rounded-full border border-border bg-white p-1.5 shadow-card">
+          <div className="absolute bottom-[calc(100%_+_6px)] left-[18px] right-[18px] flex items-center gap-1 rounded-[20px] border border-border bg-white p-1.5 shadow-[0_4px_14px_rgba(0,0,0,0.1)]">
             {ROOM_REACTIONS.map((reaction) => (
               <button
                 key={reaction.id}
@@ -102,8 +102,8 @@ export function RoomChat() {
                 onClick={() => sendReaction(reaction)}
                 aria-label={reaction.label}
                 title={reaction.label}
-                className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-neutral-50">
-                <img src={reactionIconSrc(reaction.icon)} alt="" className="h-5 w-5" />
+                className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-full p-1 transition-colors hover:bg-neutral-50">
+                <img src={reactionIconSrc(reaction.icon)} alt="" className="h-full w-full object-contain" />
               </button>
             ))}
           </div>
@@ -112,7 +112,7 @@ export function RoomChat() {
           type="button"
           onClick={() => setShowReactionPicker((v) => !v)}
           aria-label="React"
-          className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[9px] border border-border-input text-ink-label transition-colors hover:bg-neutral-50">
+          className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[9px] border border-border-input bg-white text-ink-label transition-colors hover:bg-neutral-50">
           <SmileIcon className="h-4 w-4" />
         </button>
         <input
