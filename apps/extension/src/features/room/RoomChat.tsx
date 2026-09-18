@@ -1,12 +1,25 @@
 import { useEffect, useRef, useState } from "react";
+import { browser, type PublicPath } from "wxt/browser";
 
 import { AvatarGlyph } from "@/components/AvatarGlyph";
 import { SendIcon, SmileIcon } from "@/features/room/room-icons";
-import { ROOM_MOCK_MESSAGES, ROOM_REACTIONS, type RoomChatMessage } from "@/features/room/room-mock-data";
+import {
+  ROOM_MOCK_MESSAGES,
+  ROOM_REACTIONS,
+  type RoomChatMessage,
+  type RoomReaction,
+} from "@/features/room/room-mock-data";
+
+// Same reasoning as AvatarGlyph.avatarGlyphSrc: this renders inside the
+// YouTube in-page sidebar, where a plain relative src resolves against
+// youtube.com's origin instead of the extension's.
+function reactionIconSrc(icon: string): string {
+  return browser.runtime.getURL(icon as PublicPath);
+}
 
 interface FloatingReaction {
   id: string;
-  emoji: string;
+  reaction: RoomReaction;
   left: number;
 }
 
@@ -31,9 +44,10 @@ export function RoomChat() {
     setDraft("");
   };
 
-  const sendReaction = (emoji: string) => {
+  const sendReaction = (reaction: RoomReaction) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setFloating((prev) => [...prev, { id, emoji, left: 15 + Math.random() * 60 }]);
+    setFloating((prev) => [...prev, { id, reaction, left: 15 + Math.random() * 60 }]);
+    setShowReactionPicker(false);
     setTimeout(() => setFloating((prev) => prev.filter((r) => r.id !== id)), 1800);
   };
 
@@ -41,12 +55,13 @@ export function RoomChat() {
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="pointer-events-none absolute inset-x-0 bottom-[70px] z-20">
         {floating.map((r) => (
-          <span
+          <img
             key={r.id}
-            className="absolute bottom-0 text-2xl animate-[room-reaction-float_1.8s_ease-out_forwards]"
-            style={{ left: `${r.left}%` }}>
-            {r.emoji}
-          </span>
+            src={reactionIconSrc(r.reaction.icon)}
+            alt={r.reaction.label}
+            className="absolute bottom-0 h-7 w-7 animate-[room-reaction-float_1.8s_ease-out_forwards]"
+            style={{ left: `${r.left}%` }}
+          />
         ))}
       </div>
 
@@ -80,13 +95,15 @@ export function RoomChat() {
       <div className="relative flex flex-shrink-0 items-center gap-2 border-t border-border p-3">
         {showReactionPicker && (
           <div className="absolute bottom-[calc(100%+6px)] left-3 right-3 flex items-center gap-1 rounded-full border border-border bg-white p-1.5 shadow-card">
-            {ROOM_REACTIONS.map((emoji) => (
+            {ROOM_REACTIONS.map((reaction) => (
               <button
-                key={emoji}
+                key={reaction.id}
                 type="button"
-                onClick={() => sendReaction(emoji)}
-                className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-full text-base transition-colors hover:bg-neutral-50">
-                {emoji}
+                onClick={() => sendReaction(reaction)}
+                aria-label={reaction.label}
+                title={reaction.label}
+                className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-neutral-50">
+                <img src={reactionIconSrc(reaction.icon)} alt="" className="h-5 w-5" />
               </button>
             ))}
           </div>

@@ -78,7 +78,7 @@ export default function RoomScreen({
           type="button"
           onClick={onBack}
           aria-label="Back to party setup"
-          className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-lg text-ink-label transition-colors hover:bg-neutral-100">
+          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-ink-primary transition-colors hover:bg-neutral-100">
           <ChevronLeftIcon />
         </button>
         <span className="flex-1 text-logo font-bold tracking-[-0.01em] text-ink-primary">Watch party</span>
@@ -86,16 +86,17 @@ export default function RoomScreen({
           ref={inviteButtonRef}
           type="button"
           onClick={() => void copyInvite()}
-          className="flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-blue-50 px-2.5 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-blue-100">
-          <ClipboardIcon className="h-3 w-3" />
+
+className="flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-1.5 text-[12px] font-semibold text-blue-700 transition-colors hover:bg-blue-200">
+          <ClipboardIcon className="h-3.5 w-3.5" />
           {copyLabel}
         </button>
         <button
           type="button"
           onClick={onLeave}
           aria-label="Leave party"
-          className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50">
-          <LeaveIcon className="h-4 w-4" />
+          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50">
+          <LeaveIcon className="h-[18px] w-[18px]" />
         </button>
       </div>
 
@@ -112,22 +113,26 @@ export default function RoomScreen({
             type="button"
             onClick={() => setSelfMuted((v) => !v)}
             aria-label={selfMuted ? "Unmute yourself" : "Mute yourself"}
-            className={`flex h-6 w-6 items-center justify-center rounded-full ${
-              selfMuted ? "bg-red-600 text-white" : "bg-blue-50 text-accent"
+            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+              selfMuted
+                ? "bg-red-600 text-white hover:bg-red-700"
+                : "bg-neutral-100 text-ink-primary hover:bg-neutral-200"
             }`}>
-            {selfMuted ? <MicOffMiniIcon className="h-2.5 w-2.5" /> : <MicMiniIcon className="h-2.5 w-2.5" />}
+            {selfMuted ? <MicOffMiniIcon className="h-3.5 w-3.5" /> : <MicMiniIcon className="h-3.5 w-3.5" />}
           </button>
           <button
             type="button"
             onClick={() => setSelfVideoOff((v) => !v)}
             aria-label={selfVideoOff ? "Turn camera on" : "Turn camera off"}
-            className={`flex h-6 w-6 items-center justify-center rounded-full ${
-              selfVideoOff ? "bg-red-600 text-white" : "bg-blue-50 text-accent"
+            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+              selfVideoOff
+                ? "bg-red-600 text-white hover:bg-red-700"
+                : "bg-neutral-100 text-ink-primary hover:bg-neutral-200"
             }`}>
             {selfVideoOff ? (
-              <CameraOffMiniIcon className="h-2.5 w-2.5" />
+              <CameraOffMiniIcon className="h-3.5 w-3.5" />
             ) : (
-              <CameraMiniIcon className="h-2.5 w-2.5" />
+              <CameraMiniIcon className="h-3.5 w-3.5" />
             )}
           </button>
         </div>
