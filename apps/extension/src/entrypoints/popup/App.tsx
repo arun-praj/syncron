@@ -147,7 +147,7 @@ export default function App() {
 
   return (
     <div className="h-[600px] w-[400px] overflow-y-auto bg-bg font-sans">
-      <div key={viewKey} className="motion-screen">
+      <div key={viewKey} className="h-full motion-screen">
         {content}
       </div>
     </div>

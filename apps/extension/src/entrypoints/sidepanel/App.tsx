@@ -104,5 +104,5 @@ export default function App() {
     );
   }
 
-  return <div className="min-h-screen bg-bg font-sans">{content}</div>;
+  return <div className="h-screen overflow-y-auto bg-bg font-sans">{content}</div>;
 }
