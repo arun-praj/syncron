@@ -2,12 +2,14 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { browser } from "wxt/browser";
 
 import { useDetectedStreamingTab } from "@/hooks/useDetectedStreamingTab";
+import type { StreamingService } from "@/lib/streaming-services";
 import HomeScreen from "@/screens/HomeScreen";
 import HowItWorksScreen from "@/screens/HowItWorksScreen";
 import LoginScreen from "@/screens/LoginScreen";
 import OnboardingScreen from "@/screens/OnboardingScreen";
 import PartySetupScreen from "@/screens/PartySetupScreen";
 import ProfileScreen from "@/screens/ProfileScreen";
+import RoomScreen from "@/screens/RoomScreen";
 import SignupScreen from "@/screens/SignupScreen";
 import { useAuthStore } from "@/stores/auth-store";
 
@@ -37,12 +39,20 @@ async function openServiceInSidePanel(href: string) {
 // "auto" defers to the currently detected tab (party setup on a supported
 // streaming site, Home otherwise). Explicit pages are user navigation and
 // take priority over that detection until the user backs out again.
-type Page = "auto" | "home" | "profile" | "how-it-works";
+type Page = "auto" | "home" | "profile" | "how-it-works" | "room";
+
+interface ActiveRoom {
+  inviteUrl: string;
+  service: StreamingService;
+  tabId: number;
+  tabTitle: string;
+}
 
 export default function App() {
   const { status, hydrate } = useAuthStore();
   const [authView, setAuthView] = useState<"login" | "signup">("login");
   const [page, setPage] = useState<Page>("auto");
+  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null);
   const detected = useDetectedStreamingTab();
   const openedVerificationTab = useRef(false);
 
@@ -82,6 +92,20 @@ export default function App() {
     content = <ProfileScreen onBack={() => setPage("auto")} />;
   } else if (page === "how-it-works") {
     content = <HowItWorksScreen onBack={() => setPage("auto")} />;
+  } else if (page === "room" && activeRoom) {
+    content = (
+      <RoomScreen
+        service={activeRoom.service}
+        tabId={activeRoom.tabId}
+        tabTitle={activeRoom.tabTitle}
+        inviteUrl={activeRoom.inviteUrl}
+        onBack={() => setPage("auto")}
+        onLeave={() => {
+          setActiveRoom(null);
+          setPage("home");
+        }}
+      />
+    );
   } else if (page === "home" || detected === null) {
     content = (
       <HomeScreen
@@ -100,6 +124,15 @@ export default function App() {
         tabTitle={detected.title}
         tabUrl={detected.url}
         onBack={() => setPage("home")}
+        onEnterRoom={(inviteUrl) => {
+          setActiveRoom({
+            inviteUrl,
+            service: detected.service,
+            tabId: detected.tabId,
+            tabTitle: detected.title,
+          });
+          setPage("room");
+        }}
       />
     );
   }

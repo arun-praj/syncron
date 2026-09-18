@@ -4,6 +4,10 @@ import { avatarId } from "../../../../packages/protocol/src/index.js";
 // @syncron/protocol avatarId enum ("1"-"30").
 export const AVATAR_IDS = avatarId.options;
 
+export function avatarGlyphSrc(id: string): string {
+  return `/static/avatars/${id}.webp`;
+}
+
 export function AvatarGlyph({
   avatarId: id,
   className = "",
@@ -13,7 +17,7 @@ export function AvatarGlyph({
 }) {
   return (
     <img
-      src={`/static/avatars/${id}.webp`}
+      src={avatarGlyphSrc(id)}
       alt=""
       aria-hidden="true"
       className={`rounded-full object-cover ${className}`}

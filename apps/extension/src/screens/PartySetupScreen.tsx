@@ -21,12 +21,14 @@ export default function PartySetupScreen({
   tabTitle,
   tabUrl,
   onBack,
+  onEnterRoom,
 }: {
   service: StreamingService;
   tabId: number;
   tabTitle: string;
   tabUrl: string;
   onBack: () => void;
+  onEnterRoom: (inviteUrl: string) => void;
 }) {
   const liveSnapshot = usePlaybackSnapshot(service.id === "YOUTUBE" ? tabId : null);
   const detailLine = liveSnapshot
@@ -84,7 +86,12 @@ export default function PartySetupScreen({
       </div>
 
       {inviteUrl ? (
-        <PartyStartedView inviteUrl={inviteUrl} copied={copied} onCopy={() => void copyInvite()} onDone={onBack} />
+        <PartyStartedView
+          inviteUrl={inviteUrl}
+          copied={copied}
+          onCopy={() => void copyInvite()}
+          onEnterRoom={() => onEnterRoom(inviteUrl)}
+        />
       ) : (
         <div className="flex flex-1 flex-col">
           <div className="flex flex-shrink-0 items-center gap-2.5 px-[18px] pb-1.5 pt-4">
@@ -193,12 +200,12 @@ function PartyStartedView({
   inviteUrl,
   copied,
   onCopy,
-  onDone,
+  onEnterRoom,
 }: {
   inviteUrl: string;
   copied: boolean;
   onCopy: () => void;
-  onDone: () => void;
+  onEnterRoom: () => void;
 }) {
   return (
     <div className="flex flex-1 flex-col items-center px-[18px] pb-5 pt-8 text-center">
@@ -220,8 +227,8 @@ function PartyStartedView({
         </button>
       </div>
 
-      <Button type="button" variant="secondary" className="mt-6" onClick={onDone}>
-        Done
+      <Button type="button" className="mt-6" onClick={onEnterRoom}>
+        Enter room
       </Button>
     </div>
   );
