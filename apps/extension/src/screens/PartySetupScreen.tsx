@@ -24,7 +24,7 @@ function ServiceIcon({ service }: { service: StreamingService }) {
 
   return (
     <img
-      src={browser.runtime.getURL(service.icon.replace(/^\/+/, ""))}
+      src={browser.runtime.getURL(service.icon as PublicPath)}
       alt=""
       className="h-[34px] w-[34px] flex-shrink-0 rounded-[9px]"
     />
@@ -103,11 +103,7 @@ export default function PartySetupScreen({
 
       <div className="flex flex-1 flex-col">
         <div className="flex flex-shrink-0 items-center gap-2.5 px-[18px] pb-1.5 pt-4">
-          <img
-            src={browser.runtime.getURL(service.icon as PublicPath)}
-            alt=""
-            className="h-[34px] w-[34px] flex-shrink-0 rounded-[9px]"
-          />
+          <ServiceIcon service={service} />
           <div className="min-w-0">
             <div className="text-[13px] font-semibold tracking-[-0.005em] text-ink-primary">
               {service.name} detected
