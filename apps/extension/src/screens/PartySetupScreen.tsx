@@ -133,6 +133,42 @@ export default function PartySetupScreen({
               </button>
             </div>
 
+            {/* No backend concept of member-level invite sharing yet (rooms only
+                have `everyoneCanControl`) — rendered as a non-interactive "Soon"
+                row rather than a toggle that would look functional but silently
+                do nothing, matching ProfileScreen's pattern for the same case. */}
+            <div className="mt-2.5 flex items-start gap-3 rounded-xl border border-border p-3.5 opacity-60">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] bg-blue-50">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1.5 1.5"
+                    stroke="#2563eb"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1.5-1.5"
+                    stroke="#2563eb"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[13.5px] font-semibold tracking-[-0.005em] text-ink-primary">
+                  Allow members to share the invite link
+                </div>
+                <p className="mt-[3px] text-[12px] leading-relaxed text-ink-secondary">
+                  Anyone in the room can copy and send the link to others.
+                </p>
+              </div>
+              <span className="mt-0.5 flex-shrink-0 rounded-full bg-neutral-100 px-2 py-[3px] text-[10.5px] font-medium text-ink-placeholder">
+                Soon
+              </span>
+            </div>
+
             <p className="mt-2.5 px-0.5 text-[11.5px] leading-relaxed text-ink-placeholder">
               Off by default — only you control playback until you turn this on.
             </p>
