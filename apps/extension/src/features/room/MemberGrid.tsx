@@ -50,6 +50,9 @@ export function MemberGrid({
   members: RoomMember[];
   onToggleMute: (id: string) => void;
 }) {
+  // Nothing else to show tiles for when the host is alone in the room.
+  if (members.length <= 1) return null;
+
   const compact = members.length > 4;
 
   return (

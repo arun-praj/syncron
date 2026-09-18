@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { browser } from "wxt/browser";
+import { useRef, useState } from "react";
 
 import { ChevronLeftIcon } from "@/components/icons";
 import { InviteHintOverlay } from "@/features/room/InviteHintOverlay";
@@ -17,8 +16,6 @@ import { ROOM_MOCK_MEMBERS, type RoomMember } from "@/features/room/room-mock-da
 import { usePlaybackSnapshot } from "@/hooks/usePlaybackSnapshot";
 import { formatPlaybackTime } from "@/lib/format-time";
 import type { StreamingService } from "@/lib/streaming-services";
-
-const INVITE_HINT_SEEN_KEY = "syncron_invite_hint_seen";
 
 export default function RoomScreen({
   service,
@@ -44,18 +41,12 @@ export default function RoomScreen({
   const [selfMuted, setSelfMuted] = useState(true);
   const [selfVideoOff, setSelfVideoOff] = useState(false);
   const [copyLabel, setCopyLabel] = useState("Copy invite link");
-  const [showHint, setShowHint] = useState(false);
+  // Every current path into RoomScreen is a freshly created room (there's
+  // no "rejoin an existing room" flow yet), so a just-started party always
+  // has zero other members — show the invite hint every time, not just
+  // the lifetime-first party.
+  const [showHint, setShowHint] = useState(true);
   const inviteButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void browser.storage.local.get(INVITE_HINT_SEEN_KEY).then((result) => {
-      if (!cancelled && !result[INVITE_HINT_SEEN_KEY]) setShowHint(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const copyInvite = async () => {
     try {
@@ -68,10 +59,7 @@ export default function RoomScreen({
     setTimeout(() => setCopyLabel("Copy invite link"), 1500);
   };
 
-  const dismissHint = () => {
-    setShowHint(false);
-    void browser.storage.local.set({ [INVITE_HINT_SEEN_KEY]: true });
-  };
+  const dismissHint = () => setShowHint(false);
 
   const toggleMemberMute = (id: string) => {
     setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, muted: !m.muted } : m)));

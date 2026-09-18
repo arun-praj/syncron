@@ -77,10 +77,6 @@ export function RoomChat() {
         </div>
       </div>
 
-      <div className="flex-shrink-0 px-[18px] pb-1.5">
-        <span className="text-[11.5px] italic text-ink-placeholder">Alex is typing…</span>
-      </div>
-
       <div className="relative flex flex-shrink-0 items-center gap-2 border-t border-border p-3">
         {showReactionPicker && (
           <div className="absolute bottom-[calc(100%+6px)] left-3 right-3 flex items-center gap-1 rounded-full border border-border bg-white p-1.5 shadow-card">
