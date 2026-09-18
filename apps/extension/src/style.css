@@ -71,28 +71,6 @@ body {
   }
 }
 
-/* RoomScreen's member grid needs to widen based on its own box, not the
-   page viewport — the YouTube in-page sidebar is a fixed-width column
-   inside a full-width host page, so a `md:`/`lg:` Tailwind variant would
-   key off the wrong box. Tailwind 3.4 has no container-query utilities
-   built in (that's a separate `@tailwindcss/container-queries` plugin),
-   so this is plain CSS instead of pulling in a plugin for one rule. */
-.room-screen {
-  container-type: inline-size;
-}
-
-@container (min-width: 448px) {
-  .room-member-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@container (min-width: 640px) {
-  .room-member-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
 @keyframes otp-shake {
   10%,
   90% {

@@ -30,74 +30,63 @@ export function RoomChat() {
   }, [messages.length]);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="pointer-events-none absolute inset-x-0 bottom-[70px] z-20">
-        {floatingReactions.map((r) => (
-          <img
-            key={r.id}
-            src={reactionIconSrc(r.icon)}
-            alt=""
-            className="absolute bottom-0 h-8 w-8 animate-[room-reaction-float_1.8s_ease-out_forwards]"
-            style={{ left: `${r.left}%` }}
-          />
-        ))}
-      </div>
+    <div className="chat-area">
+      {floatingReactions.map((r) => (
+        <img
+          key={r.id}
+          src={reactionIconSrc(r.icon)}
+          alt=""
+          className="float-reaction"
+          style={{ left: `${r.left}%` }}
+        />
+      ))}
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-[18px] py-3">
-        <div className="flex flex-col gap-2.5">
-          {messages.map((msg) =>
-            msg.kind === "system" ? (
-              <div key={msg.id} className="flex items-center justify-center gap-1.5 py-0.5">
-                <span className="h-[3px] w-[3px] flex-shrink-0 rounded-full bg-[#d4d4d8]" />
-                <span className="text-center text-[11px] italic text-ink-placeholder">{msg.text}</span>
-                <span className="h-[3px] w-[3px] flex-shrink-0 rounded-full bg-[#d4d4d8]" />
-              </div>
-            ) : (
-              <div key={msg.id} className="flex items-start gap-2">
-                {msg.avatarId && (
-                  <AvatarGlyph avatarId={msg.avatarId} className="mt-0.5 h-6 w-6 flex-shrink-0" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-[12px] font-semibold text-ink-primary">{msg.authorName}</span>
-                    <span className="text-[10.5px] text-ink-placeholder">{msg.time}</span>
-                  </div>
-                  <p className="mt-0.5 text-[12.5px] leading-snug text-ink-label">{msg.text}</p>
+      <div ref={scrollRef} className="chat-scroll">
+        {messages.map((msg) =>
+          msg.kind === "system" ? (
+            <div key={msg.id} className="system-msg">
+              <span className="system-dot" />
+              <span className="system-text">{msg.text}</span>
+              <span className="system-dot" />
+            </div>
+          ) : (
+            <div key={msg.id} className="chat-msg">
+              {msg.avatarId && <AvatarGlyph avatarId={msg.avatarId} className="chat-avatar" />}
+              <div className="chat-body">
+                <div className="chat-meta">
+                  <span className="chat-name">{msg.authorName}</span>
+                  <span className="chat-time">{msg.time}</span>
                 </div>
+                <p className="chat-text">{msg.text}</p>
               </div>
-            ),
-          )}
-        </div>
+            </div>
+          ),
+        )}
       </div>
 
       {isPeerTyping && (
-        <div className="flex flex-shrink-0 items-center gap-1.5 px-[18px] pb-1.5">
-          <span className="text-[11.5px] italic text-ink-placeholder">Alex is typing…</span>
+        <div className="typing">
+          <span>Alex is typing…</span>
         </div>
       )}
 
-      <div className="relative flex flex-shrink-0 items-center gap-2 border-t border-border px-[18px] py-3">
+      <div className="composer">
         {showReactionPicker && (
-          <div className="absolute bottom-[calc(100%_+_6px)] left-[18px] right-[18px] flex items-center gap-1 rounded-[20px] border border-border bg-white p-1.5 shadow-[0_4px_14px_rgba(0,0,0,0.1)]">
+          <div className="reaction-picker">
             {ROOM_REACTIONS.map((reaction) => (
               <button
                 key={reaction.id}
                 type="button"
                 onClick={() => sendReaction(reaction)}
                 aria-label={reaction.label}
-                title={reaction.label}
-                className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-full p-1 transition-colors hover:bg-[#fafafa]">
-                <img src={reactionIconSrc(reaction.icon)} alt="" className="h-full w-full object-contain" />
+                title={reaction.label}>
+                <img src={reactionIconSrc(reaction.icon)} alt="" />
               </button>
             ))}
           </div>
         )}
-        <button
-          type="button"
-          onClick={toggleReactionPicker}
-          aria-label="React"
-          className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-input border border-border-input bg-white text-ink-label transition-colors hover:bg-[#fafafa]">
-          <SmileIcon className="h-4 w-4" />
+        <button type="button" onClick={toggleReactionPicker} aria-label="React" className="react-toggle">
+          <SmileIcon />
         </button>
         <input
           type="text"
@@ -107,14 +96,10 @@ export function RoomChat() {
             if (e.key === "Enter") sendMessage();
           }}
           placeholder="Send a message"
-          className="min-w-0 flex-1 rounded-input border border-border-input px-3 py-[9px] text-[12.5px] text-ink-primary outline-none focus:border-[#93c5fd]"
+          className="msg-input"
         />
-        <button
-          type="button"
-          onClick={sendMessage}
-          aria-label="Send message"
-          className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-input bg-gradient-to-b from-brand-top to-brand-bottom text-white shadow-btn-primary">
-          <SendIcon className="h-3.5 w-3.5" />
+        <button type="button" onClick={sendMessage} aria-label="Send message" className="send-btn">
+          <SendIcon />
         </button>
       </div>
     </div>
