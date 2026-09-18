@@ -406,6 +406,8 @@ test("REST auth, invite rotation, host checks, profile labels, LiveKit grants an
     await s.request("/api/v1/rooms", { name: "Movie", media: roomMedia }, a.token)
   ).json();
   const id = created.room.id;
+  expect(created.room.allowMembersToShareInvite).toBe(false);
+  expect((await s.store.room(id)).allowMembersToShareInvite).toBe(false);
   const invite = new URL(created.inviteUrl).hash.slice(8);
   expect(
     (await s.request(`/api/v1/rooms/${id}/join`, {}, b.token)).status,
@@ -415,6 +417,28 @@ test("REST auth, invite rotation, host checks, profile labels, LiveKit grants an
   ).toBe(200);
   expect(
     (await s.request(`/api/v1/rooms/${id}/invite`, undefined, b.token)).status,
+  ).toBe(403);
+  const shared = await (
+    await s.request(
+      "/api/v1/rooms",
+      { media: roomMedia, allowMembersToShareInvite: true },
+      a.token,
+    )
+  ).json();
+  expect(shared.room.allowMembersToShareInvite).toBe(true);
+  expect((await s.store.room(shared.room.id)).allowMembersToShareInvite).toBe(true);
+  const sharedInvite = new URL(shared.inviteUrl).hash.slice(8);
+  expect(
+    (await s.request("/api/v1/rooms/join", { invite: sharedInvite }, b.token))
+      .status,
+  ).toBe(200);
+  expect(
+    (await s.request(`/api/v1/rooms/${shared.room.id}/invite`, undefined, b.token))
+      .status,
+  ).toBe(200);
+  expect(
+    (await s.request(`/api/v1/rooms/${shared.room.id}/invite/rotate`, {}, b.token))
+      .status,
   ).toBe(403);
   expect(
     (

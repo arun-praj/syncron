@@ -45,6 +45,7 @@ export class Store {
       name: r.name,
       status: r.status,
       everyoneCanControl: r.everyoneCanControl,
+      allowMembersToShareInvite: r.allowMembersToShareInvite,
       maxParticipants: 25 as const,
       host: await this.publicUser(r.hostUserId),
       createdAt: r.createdAt.toISOString(),
@@ -65,7 +66,11 @@ export class Store {
   async create(
     userId: string,
     name?: string,
-    options: { everyoneCanControl?: boolean; media?: MediaDestination | null } = {},
+    options: {
+      everyoneCanControl?: boolean;
+      allowMembersToShareInvite?: boolean;
+      media?: MediaDestination | null;
+    } = {},
   ) {
     const now = new Date();
     const id = newId();
@@ -79,6 +84,7 @@ export class Store {
             creatorUserId: userId,
             hostUserId: userId,
             everyoneCanControl: options.everyoneCanControl ?? true,
+            allowMembersToShareInvite: options.allowMembersToShareInvite ?? false,
             mediaProvider: options.media?.provider,
             mediaId: options.media?.mediaId,
             mediaUrl: options.media?.url,

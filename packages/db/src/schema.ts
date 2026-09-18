@@ -101,6 +101,9 @@ export const rooms = sqliteTable(
     everyoneCanControl: integer("everyone_can_control", { mode: "boolean" })
       .notNull()
       .default(true),
+    allowMembersToShareInvite: integer("allow_members_to_share_invite", { mode: "boolean" })
+      .notNull()
+      .default(false),
     maxParticipants: integer("max_participants").notNull().default(25),
     createdAt: date("created_at").notNull(),
     updatedAt: date("updated_at").notNull(),

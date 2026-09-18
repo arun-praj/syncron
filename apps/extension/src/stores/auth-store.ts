@@ -46,6 +46,7 @@ interface AuthState {
   ) => Promise<void>;
   updateProfile: (input: z.infer<typeof profileUpdateSchema>) => Promise<void>;
   signOut: () => Promise<void>;
+  changePassword: (input: { currentPassword: string; newPassword: string }) => Promise<boolean>;
   requestPasswordReset: (email: string) => Promise<void>;
   resetPassword: (input: { email: string; otp: string; password: string }) => Promise<void>;
   clearError: () => void;
@@ -232,6 +233,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         info: null,
       });
     }
+  },
+
+  changePassword: async ({ currentPassword, newPassword }) => {
+    set({ isSubmitting: true, error: null, info: null });
+    const { error } = await authClient.changePassword({
+      currentPassword,
+      newPassword,
+      revokeOtherSessions: true,
+    });
+    if (error) {
+      set({ isSubmitting: false, error: authErrorMessage(error) });
+      return false;
+    }
+    set({ isSubmitting: false, info: "Your password has been changed." });
+    return true;
   },
 
   // docs/backend-development.md's documented recovery flow: request an

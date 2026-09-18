@@ -42,6 +42,35 @@ export interface AuthErrorLike {
   status?: number;
 }
 
+export interface PasswordChangeInput {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+export interface PasswordChangeErrors {
+  currentPassword?: string;
+  newPassword?: string;
+  confirmPassword?: string;
+}
+
+export function validatePasswordChange({
+  currentPassword,
+  newPassword,
+  confirmPassword,
+}: PasswordChangeInput): PasswordChangeErrors {
+  const errors: PasswordChangeErrors = {};
+  if (!currentPassword) errors.currentPassword = "Enter your current password.";
+  if (!newPassword) errors.newPassword = "Enter a new password.";
+  else if (newPassword.length < 8) errors.newPassword = "Use at least 8 characters.";
+  else if (newPassword.length > 128)
+    errors.newPassword = "Use 128 characters or fewer.";
+  if (newPassword && newPassword !== confirmPassword)
+    errors.confirmPassword = "Passwords don't match.";
+  else if (!confirmPassword) errors.confirmPassword = "Confirm your new password.";
+  return errors;
+}
+
 // Maps a Better Auth / Syncron API error into a short, user-facing
 // message. Falls back to a generic message so the UI never surfaces a raw
 // error code to the user.
@@ -52,6 +81,13 @@ export function authErrorMessage(error: AuthErrorLike | undefined | null): strin
   if (needsEmailVerification(error.code))
     return "Please verify your email to continue.";
   if (isInvalidCredentials(error.code)) return "Incorrect email or password.";
+  if (error.code === "INVALID_PASSWORD") return "Your current password is incorrect.";
+  if (error.code === "PASSWORD_TOO_SHORT")
+    return "Your new password is too short. Use at least 8 characters.";
+  if (error.code === "PASSWORD_TOO_LONG")
+    return "Your new password is too long. Use 128 characters or fewer.";
+  if (error.code === "CREDENTIAL_ACCOUNT_NOT_FOUND")
+    return "Password changes are only available for email/password accounts.";
   if (isAccountAlreadyExists(error.code))
     return "An account with that email already exists.";
   if (isInvalidOtp(error.code)) return "That code isn't right. Try again.";

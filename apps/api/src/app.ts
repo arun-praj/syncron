@@ -172,7 +172,11 @@ export async function createApp(deps: {
     const uid = c.get("userId");
     if (!(await store.onboarded(uid))) throw new DomainError("ONBOARDING_REQUIRED", 409);
     limited(`create:${uid}`, 10, 3600000);
-    const id = await store.create(uid, body.name, { everyoneCanControl: body.everyoneCanControl, media: body.media });
+    const id = await store.create(uid, body.name, {
+      everyoneCanControl: body.everyoneCanControl,
+      allowMembersToShareInvite: body.allowMembersToShareInvite,
+      media: body.media,
+    });
     await coordinators.run(id, async (coord) => coord.initializeMedia(body.media, uid));
     const navigation = await coordinators.run(id, (coord) => coord.navigation());
     return c.json(
@@ -254,8 +258,12 @@ export async function createApp(deps: {
         limited(`host:${uid}`, 30, 60000);
         return c.json(
           await coordinators.run(id, async (coord) => {
-            await coord.authorize(uid, true);
             let r = await store.room(id);
+            if (rotate || r.hostUserId === uid) await coord.authorize(uid, true);
+            else {
+              if (!r.allowMembersToShareInvite) throw new DomainError("NOT_ROOM_HOST");
+              await coord.authorize(uid);
+            }
             if (rotate) {
               await db
                 .update(rooms)

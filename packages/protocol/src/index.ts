@@ -29,6 +29,7 @@ export const onboarding = z.strictObject({
 export const createRoom = z.strictObject({
   name: z.string().trim().min(1).max(100).optional(),
   everyoneCanControl: z.boolean().default(true),
+  allowMembersToShareInvite: z.boolean().default(false),
   media: mediaDestination,
 });
 export const joinRoom = z.strictObject({ invite: z.string().min(1).max(1024) });
@@ -95,6 +96,7 @@ export const room = z.object({
   name: z.string().nullable(),
   status: z.enum(["ACTIVE", "ENDED"]),
   everyoneCanControl: z.boolean(),
+  allowMembersToShareInvite: z.boolean(),
   maxParticipants: z.literal(25),
   host: publicUser,
   createdAt: z.iso.datetime(),

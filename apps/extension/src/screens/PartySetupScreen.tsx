@@ -36,6 +36,7 @@ export default function PartySetupScreen({
     : tabTitle;
 
   const [allowControl, setAllowControl] = useState(false);
+  const [allowShare, setAllowShare] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
@@ -48,6 +49,7 @@ export default function PartySetupScreen({
       const { inviteUrl } = await api.createRoom({
         name: tabTitle.slice(0, 100),
         everyoneCanControl: allowControl,
+        allowMembersToShareInvite: allowShare,
         media: { provider: service.id, mediaId: null, url: tabUrl },
       });
       setInviteUrl(inviteUrl);
@@ -140,11 +142,7 @@ export default function PartySetupScreen({
               </button>
             </div>
 
-            {/* No backend concept of member-level invite sharing yet (rooms only
-                have `everyoneCanControl`) — rendered as a non-interactive "Soon"
-                row rather than a toggle that would look functional but silently
-                do nothing, matching ProfileScreen's pattern for the same case. */}
-            <div className="mt-2.5 flex items-start gap-3 rounded-xl border border-border p-3.5 opacity-60">
+            <div className="mt-2.5 flex items-start gap-3 rounded-xl border border-border p-3.5">
               <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] bg-blue-50">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
                   <path
@@ -171,13 +169,25 @@ export default function PartySetupScreen({
                   Anyone in the room can copy and send the link to others.
                 </p>
               </div>
-              <span className="mt-0.5 flex-shrink-0 rounded-full bg-neutral-100 px-2 py-[3px] text-[10.5px] font-medium text-ink-placeholder">
-                Soon
-              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={allowShare}
+                aria-label="Allow members to share the invite link"
+                onClick={() => setAllowShare((v) => !v)}
+                className={`relative mt-0.5 h-[22px] w-[38px] flex-shrink-0 rounded-full transition-colors duration-150 ${
+                  allowShare ? "bg-accent" : "bg-neutral-300"
+                }`}>
+                <span
+                  className={`absolute top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-[left] duration-150 ${
+                    allowShare ? "left-[18px]" : "left-0.5"
+                  }`}
+                />
+              </button>
             </div>
 
             <p className="mt-2.5 px-0.5 text-[11.5px] leading-relaxed text-ink-placeholder">
-              Off by default — only you control playback until you turn this on.
+              Off by default — turn on each permission to let members control playback or share the invite link.
             </p>
 
             {error && <p className="mt-3 text-[11.5px] text-red-500">{error}</p>}

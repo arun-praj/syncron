@@ -2,7 +2,7 @@
 
 Phase 1 backend contract. All /api/v1 routes require a verified Better Auth bearer session. User IDs always refer to Better Auth; usernames are editable, non-unique labels. Resource IDs are UUIDv7. JSON input is strict and bounded.
 
-Better Auth is mounted at /api/auth/*. Email/password requires verification using six-digit email OTPs (300 seconds, three attempts, hashed, rotating resend, 60-second cooldown). Recovery uses email OTP. Google must assert email_verified=true and bypasses Syncron OTP. Email changes and deletion are disabled.
+Better Auth is mounted at /api/auth/*. Its authenticated `POST /api/auth/change-password` endpoint accepts `{currentPassword,newPassword,revokeOtherSessions?}` and returns `{token,user}`, where `token` may be null and is rotated when `revokeOtherSessions` is true. Email/password requires verification using six-digit email OTPs (300 seconds, three attempts, hashed, rotating resend, 60-second cooldown). Recovery uses email OTP. Google must assert email_verified=true and bypasses Syncron OTP. Email changes and deletion are disabled.
 
 ## REST
 
@@ -12,9 +12,9 @@ Better Auth is mounted at /api/auth/*. Email/password requires verification usin
 | PATCH /me | {username?,displayName?,avatarId?}, at least one | {user} | self |
 | POST /me/onboarding | {username,avatarId,displayName?} | {user} | verified user without/with onboarding |
 | GET /users/:userId | — | {user} public profile | authenticated |
-| POST /rooms | {name?,everyoneCanControl,media:{provider,mediaId,url}} | 201 {room,inviteUrl} | authenticated and onboarded |
+| POST /rooms | {name?,everyoneCanControl,allowMembersToShareInvite,media:{provider,mediaId,url}} | 201 {room,inviteUrl} | authenticated and onboarded |
 | GET /rooms/:roomId | — | {room} | historical member |
-| GET /rooms/:roomId/invite | — | {inviteUrl} | active host |
+| GET /rooms/:roomId/invite | — | {inviteUrl} | active host, or active member when `allowMembersToShareInvite=true` |
 | POST /rooms/:roomId/invite/rotate | {} | {inviteUrl} | active host |
 | POST /rooms/join | {invite} | {room,membership} | authenticated |
 | POST /rooms/:roomId/join | {invite} | {room,membership} | authenticated; matching room |
@@ -28,7 +28,7 @@ Better Auth is mounted at /api/auth/*. Email/password requires verification usin
 | POST /rooms/:roomId/livekit-token | {} | {url,token,roomName,participantIdentity} | active member |
 | PATCH /rooms/:roomId/members/:userId/microphone | {allowed:boolean} | {allowed} | active host |
 
-Room: id, name, status, everyoneCanControl, maxParticipants (25), host (PublicUser), createdAt, endedAt, media (destination or null), hasPlaybackState. PublicUser: id, username, avatarId, displayName, image. /me additionally includes email, emailVerified, createdAt, onboardingCompletedAt. Member: user, role, joinedAt, connected, microphoneAllowed. Timestamps are ISO UTC.
+Room: id, name, status, everyoneCanControl, allowMembersToShareInvite, maxParticipants (25), host (PublicUser), createdAt, endedAt, media (destination or null), hasPlaybackState. PublicUser: id, username, avatarId, displayName, image. /me additionally includes email, emailVerified, createdAt, onboardingCompletedAt. Member: user, role, joinedAt, connected, microphoneAllowed. Timestamps are ISO UTC.
 
 Invites are HMAC-SHA256 signed roomId/inviteVersion claims, in APP_URL/join#invite=<token>. No codes, access modes or passwords. Initial join requires an invite; existing active memberships reconnect using tickets without an invite. Rotation increments persisted version and revokes old invites. Invite tokens are never persisted or logged.
 

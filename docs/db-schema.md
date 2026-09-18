@@ -96,6 +96,7 @@ Initial label: normalized email local part, then provider first name, then user;
 | `invite_version` | INTEGER | no | CHECK >=1, default 1 | signed invite revocation counter |
 | `status` | TEXT | no | CHECK | `ACTIVE` or `ENDED` |
 | `everyone_can_control` | INTEGER/BOOLEAN | no |  | default true |
+| `allow_members_to_share_invite` | INTEGER/BOOLEAN | no |  | default false; permits active members to fetch the current signed invite |
 | `max_participants` | INTEGER | no | CHECK =25 | Phase 1 default/max 25 |
 | `created_at` | timestamp | no |  | UTC |
 | `updated_at` | timestamp | no |  | UTC |

@@ -7,9 +7,10 @@ The Hono API remains the authority for Better Auth identity, onboarding, party m
 - `user_profiles` stores nullable `avatar_id` and `onboarding_completed_at`; valid avatar IDs are `1` through `30`.
 - `/api/v1/me` returns avatar and onboarding status. `POST /api/v1/me/onboarding` completes onboarding atomically. `PATCH /api/v1/me` can change the username and avatar.
 - Creating or joining a party requires completed onboarding.
-- Room creation accepts `everyoneCanControl` and an initial provider/media ID/page URL together. The room stores only the initial media descriptor; transient position, pause/rate state and chat remain in memory/LiveKit.
+- Room creation accepts `everyoneCanControl`, `allowMembersToShareInvite` (default false), and an initial provider/media ID/page URL together. The room stores only the initial media descriptor and permission settings; transient position, pause/rate state and chat remain in memory/LiveKit.
 - Join and room responses expose the current coordinator media, with the persisted initial descriptor as restart fallback and `hasPlaybackState` to distinguish the two.
 - `/join` returns a minimal no-analytics handoff page. Signed tokens remain fragment-only and are never logged or persisted.
+- `GET /api/v1/rooms/:roomId/invite` remains host-only unless `allowMembersToShareInvite` is true; then active members may fetch the current signed invite. Rotation remains host-only.
 - `PATCH /api/v1/rooms/:roomId/members/:userId/microphone` is host-only. It persists the active membership microphone permission, updates the LiveKit participant grant, mutes existing microphone tracks, and broadcasts the new state.
 - LiveKit tokens grant camera publishing independently from microphone publishing. Reissued tokens preserve microphone restrictions.
 

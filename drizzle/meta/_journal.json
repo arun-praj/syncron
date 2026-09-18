@@ -15,6 +15,13 @@
       "when": 1789492214912,
       "tag": "0001_dry_naoko",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789750000000,
+      "tag": "0002_friendly_invite_sharing",
+      "breakpoints": true
     }
   ]
 }
