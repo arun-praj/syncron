@@ -59,9 +59,10 @@ export function InviteHintOverlay({
           <button
             type="button"
             onClick={onCopy}
-            className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-brand-top to-brand-bottom px-2.5 py-2 text-[12px] font-semibold text-white shadow-btn-primary">
-            <ClipboardIcon className="h-3 w-3" />
-            {copyLabel}
+            aria-label={copyLabel}
+            title={copyLabel}
+            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-b from-brand-top to-brand-bottom text-white shadow-btn-primary">
+            <ClipboardIcon className="h-4 w-4" />
           </button>
         </div>
         <button
