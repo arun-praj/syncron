@@ -120,7 +120,49 @@ export async function createApp(deps: {
       return c.json({ status: "unavailable" }, 503);
     }
   });
-  app.get("/join", (c) => c.html(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Join Syncron party</title><style>:root{color-scheme:light;--canvas:#fff;--surface:#fff;--text:#404040;--strong:#0a0a0a;--muted:#737373;--border:#e5e5e5;--brand:#1e90ff;--brand-light:#5cb3ff;--radius:8px;--space-4:16px;--space-6:24px;--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}@media(prefers-color-scheme:dark){:root{color-scheme:dark;--canvas:#0a0a0a;--surface:#171717;--text:#d4d4d4;--strong:#fff;--muted:#a3a3a3;--border:#404040}}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--canvas);color:var(--text);font:14px/20px var(--font)}main{max-width:420px;margin:var(--space-4);padding:32px var(--space-6);border:1px solid color-mix(in srgb,var(--border) 90%,transparent);border-radius:18px;background:var(--surface);box-shadow:0 1px 3px rgb(0 0 0 / 10%),0 1px 2px -1px rgb(0 0 0 / 10%)}h1{margin:0 0 var(--space-4);color:var(--strong);font-size:24px;line-height:32px}p{margin:0;color:var(--muted)}</style><main><h1>Open this link in Syncron</h1><p>Install the Syncron extension, then reopen this invite link.</p></main>`));
+  app.get("/join", (c) =>
+    c.html(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Join Syncron party</title><style>:root{color-scheme:light;--canvas:#fff;--surface:#fff;--text:#404040;--strong:#0a0a0a;--muted:#737373;--border:#e5e5e5;--brand:#1e90ff;--brand-light:#5cb3ff;--radius:8px;--space-4:16px;--space-6:24px;--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}@media(prefers-color-scheme:dark){:root{color-scheme:dark;--canvas:#0a0a0a;--surface:#171717;--text:#d4d4d4;--strong:#fff;--muted:#a3a3a3;--border:#404040}}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--canvas);color:var(--text);font:14px/20px var(--font)}main{max-width:420px;margin:var(--space-4);padding:32px var(--space-6);border:1px solid color-mix(in srgb,var(--border) 90%,transparent);border-radius:18px;background:var(--surface);box-shadow:0 1px 3px rgb(0 0 0 / 10%),0 1px 2px -1px rgb(0 0 0 / 10%)}h1{margin:0 0 var(--space-4);color:var(--strong);font-size:24px;line-height:32px}p{margin:0;color:var(--muted)}.btn{margin-top:var(--space-4);display:inline-flex;align-items:center;justify-content:center;padding:10px 20px;border:none;border-radius:var(--radius);cursor:pointer;color:#fff;font:600 14px/20px var(--font);background:linear-gradient(to bottom,var(--brand-light),var(--brand))}.btn:disabled{opacity:.6;cursor:default}.state{display:none}.state.active{display:block}</style><main>
+<div id="detecting" class="state active"><h1>Looking for Syncron…</h1><p>Checking whether the extension is installed.</p></div>
+<div id="ready" class="state"><h1>Join this watch party</h1><p>Open the invite in Syncron to join in.</p><button type="button" class="btn" id="open-btn">Open in Syncron</button></div>
+<div id="joined" class="state"><h1>You're in!</h1><p>Check the Syncron sidebar on the video tab that just opened.</p></div>
+<div id="failed" class="state"><h1>Couldn't join</h1><p id="failed-message"></p></div>
+<div id="missing" class="state"><h1>Open this link in Syncron</h1><p>Install the Syncron extension, then reopen this invite link.</p></div>
+</main>
+<script>(function(){
+  var EXTENSION_ID = ${JSON.stringify(config.EXTENSION_ID ?? "")};
+  var invite = (location.hash.match(/invite=([^&]+)/) || [])[1];
+  function show(id){
+    var states = document.querySelectorAll(".state");
+    for (var i = 0; i < states.length; i++) states[i].classList.remove("active");
+    document.getElementById(id).classList.add("active");
+  }
+  if (!EXTENSION_ID || !invite || typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage) {
+    show("missing");
+    return;
+  }
+  chrome.runtime.sendMessage(EXTENSION_ID, { type: "syncron:ping" }, function (res) {
+    if (chrome.runtime.lastError || !res || !res.ok) { show("missing"); return; }
+    show("ready");
+  });
+  document.getElementById("open-btn").addEventListener("click", function () {
+    var btn = document.getElementById("open-btn");
+    btn.disabled = true;
+    chrome.runtime.sendMessage(EXTENSION_ID, { type: "syncron:join-invite", invite: invite }, function (res) {
+      btn.disabled = false;
+      if (chrome.runtime.lastError || !res) {
+        document.getElementById("failed-message").textContent = "Couldn't reach the Syncron extension.";
+        show("failed");
+        return;
+      }
+      if (res.ok) show("joined");
+      else {
+        document.getElementById("failed-message").textContent = res.message || "Please try again.";
+        show("failed");
+      }
+    });
+  });
+})();</script>`),
+  );
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     const headers = new Headers(c.req.raw.headers);
     headers.set("x-syncron-client-ip", c.get("clientIp"));

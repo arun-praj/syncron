@@ -19,7 +19,12 @@ export default function App() {
       service: YOUTUBE,
       tabId: 1,
       tabTitle: "Daft Punk - One More Time (Official Video)",
+      roomId: "preview-room",
+      isHost: true,
+      everyoneCanControl: false,
+      canShareInvite: true,
       inviteUrl: "https://app.syncron.example/join#invite=preview",
+      members: [{ id: "you", name: "You", avatarId: "1", isHost: true }],
     });
   }, [enterRoom]);
 

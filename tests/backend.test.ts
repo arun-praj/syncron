@@ -188,6 +188,18 @@ test("development allows extension CORS origins while production restricts them"
   ).toBe(origin);
 });
 
+test("GET /join always keeps the install-the-extension fallback, and only embeds a real extension ID when configured", async () => {
+  const withoutId = await setup();
+  const withoutIdHtml = await (await withoutId.request("/join")).text();
+  expect(withoutIdHtml).toContain("Install the Syncron extension");
+  expect(withoutIdHtml).toContain('var EXTENSION_ID = "";');
+
+  const withId = await setup({ EXTENSION_ID: "abcdefghijklmnopabcdefghijklmnop" });
+  const withIdHtml = await (await withId.request("/join")).text();
+  expect(withIdHtml).toContain("Install the Syncron extension");
+  expect(withIdHtml).toContain('var EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop";');
+});
+
 const playback = {
   provider: "YOUTUBE",
   mediaId: "abc",

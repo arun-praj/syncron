@@ -8,6 +8,13 @@ const schema = z.object({
   API_PORT: z.coerce.number().int().min(1).max(65535).default(8000),
   DATABASE_URL: z.string().default("file:./data/syncron.db"),
   APP_URL: z.url().default("http://localhost:8000"),
+  // The unpacked extension's ID (visible on chrome://extensions once
+  // loaded) — lets the GET /join page hand the invite off to the
+  // extension via `chrome.runtime.sendMessage(EXTENSION_ID, ...)`. Unset
+  // in environments where it isn't known yet (e.g. before the extension
+  // has a stable published ID); the join page falls back to its
+  // install-the-extension message in that case.
+  EXTENSION_ID: z.string().optional(),
   BETTER_AUTH_URL: z.url().default("http://localhost:8000"),
   BETTER_AUTH_SECRET: secret,
   INVITE_SECRET: secret,

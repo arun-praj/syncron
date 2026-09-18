@@ -1,21 +1,22 @@
 import { createRoot, type Root } from "react-dom/client";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { browser } from "wxt/browser";
 
 import {
   isActivateYoutubeSidebarMessage,
   YOUTUBE_CONTENT_READY,
   type ActivateYoutubeSidebarMessage,
+  type JoinedRoomSnapshot,
 } from "@/lib/extension-messages";
 import { readPagePlaybackSnapshot } from "@/lib/page-playback";
-import { isPlaybackSnapshotRequest } from "@/lib/playback-messages";
+import { isPlaybackSnapshotRequest, type PlaybackSnapshot } from "@/lib/playback-messages";
 import { STREAMING_SERVICES } from "@/lib/streaming-services";
 import OnboardingScreen from "@/screens/OnboardingScreen";
 import PartySetupScreen from "@/screens/PartySetupScreen";
 import RoomScreen from "@/screens/RoomScreen";
 import { watchStoredSession } from "@/services/auth/client";
 import { useAuthStore } from "@/stores/auth-store";
-import { useRoomStore } from "@/stores/room-store";
+import { useRoomStore, type RoomIdentity } from "@/stores/room-store";
 
 import "@/style.css";
 
@@ -106,10 +107,36 @@ function SidebarFrame({
   );
 }
 
-function SyncronSidebar({ tabId }: { tabId: number }) {
+function joinedRoomToIdentity(
+  snapshot: JoinedRoomSnapshot,
+  tabId: number,
+  tabTitle: string,
+  readPlaybackSnapshot: () => Promise<PlaybackSnapshot | null>,
+): RoomIdentity {
+  return {
+    service: YOUTUBE,
+    tabId,
+    tabTitle,
+    roomId: snapshot.roomId,
+    isHost: snapshot.isHost,
+    everyoneCanControl: snapshot.everyoneCanControl,
+    canShareInvite: snapshot.isHost || snapshot.allowMembersToShareInvite,
+    inviteUrl: snapshot.inviteUrl,
+    members: snapshot.members,
+    readPlaybackSnapshot,
+  };
+}
+
+function SyncronSidebar({
+  tabId,
+  initialJoinedRoom,
+}: {
+  tabId: number;
+  initialJoinedRoom?: JoinedRoomSnapshot;
+}) {
   const { status, hydrate } = useAuthStore();
   const [open, setOpen] = useState(true);
-  const [page, setPage] = useState<"setup" | "room">("setup");
+  const [page, setPage] = useState<"setup" | "room">(initialJoinedRoom ? "room" : "setup");
   const enterRoom = useRoomStore((s) => s.enterRoom);
   const context = useYoutubeTabContext(tabId);
   const readSnapshot = useCallback(async () => readPagePlaybackSnapshot(), []);
@@ -122,15 +149,29 @@ function SyncronSidebar({ tabId }: { tabId: number }) {
 
   useEffect(() => watchStoredSession(() => void hydrate()), [hydrate]);
 
+  // Applies once for a tab opened specifically to land a just-joined
+  // member — background.ts only attaches `joinedRoom` to the very first
+  // activation message a freshly created tab receives.
+  const appliedInitialJoin = useRef(false);
+  useEffect(() => {
+    if (!initialJoinedRoom || appliedInitialJoin.current) return;
+    appliedInitialJoin.current = true;
+    enterRoom(joinedRoomToIdentity(initialJoinedRoom, tabId, context.tabTitle, readSnapshot));
+  }, [initialJoinedRoom, tabId, context.tabTitle, readSnapshot, enterRoom]);
+
   useEffect(() => {
     const onActivation = (message: unknown) => {
       if (!isActivateYoutubeSidebarMessage(message) || message.tabId !== tabId) return;
       setOpen(true);
+      if (message.joinedRoom) {
+        enterRoom(joinedRoomToIdentity(message.joinedRoom, tabId, context.tabTitle, readSnapshot));
+        setPage("room");
+      }
     };
 
     browser.runtime.onMessage.addListener(onActivation);
     return () => browser.runtime.onMessage.removeListener(onActivation);
-  }, [tabId]);
+  }, [tabId, context.tabTitle, enterRoom, readSnapshot]);
 
   const setup = useMemo(
     () => (
@@ -141,13 +182,10 @@ function SyncronSidebar({ tabId }: { tabId: number }) {
         tabUrl={context.tabUrl}
         readPlaybackSnapshot={readSnapshot}
         onBack={() => setOpen(false)}
-        onEnterRoom={(inviteUrl) => {
-          enterRoom({ inviteUrl, service: YOUTUBE, tabId, tabTitle: context.tabTitle, readPlaybackSnapshot: readSnapshot });
-          setPage("room");
-        }}
+        onEnterRoom={() => setPage("room")}
       />
     ),
-    [context.tabTitle, context.tabUrl, readSnapshot, tabId, enterRoom],
+    [context.tabTitle, context.tabUrl, readSnapshot, tabId],
   );
 
   let content: ReactNode;
@@ -225,7 +263,7 @@ export default defineContentScript({
       anchor: "body",
       onMount(container): Root {
         const root = createRoot(container);
-        root.render(<SyncronSidebar tabId={activation.tabId} />);
+        root.render(<SyncronSidebar tabId={activation.tabId} initialJoinedRoom={activation.joinedRoom} />);
         return root;
       },
       onRemove(root) {

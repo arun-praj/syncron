@@ -41,6 +41,7 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   const videoTitle = liveSnapshot?.title ?? identity.tabTitle;
   const isPlaying = liveSnapshot ? !liveSnapshot.paused : false;
   const timeLabel = liveSnapshot ? formatPlaybackTime(liveSnapshot.currentTime) : "--:--";
+  const canShowInvite = identity.canShareInvite && identity.inviteUrl !== null;
 
   return (
     <div className="room-screen">
@@ -49,10 +50,12 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
           <ChevronLeftIcon />
         </button>
         <span className="title">Watch party</span>
-        <button ref={inviteButtonRef} type="button" onClick={() => void copyInvite()} className="copy-btn">
-          <ClipboardIcon width={12} height={12} />
-          {copyLabel}
-        </button>
+        {canShowInvite && (
+          <button ref={inviteButtonRef} type="button" onClick={() => void copyInvite()} className="copy-btn">
+            <ClipboardIcon width={12} height={12} />
+            {copyLabel}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -91,7 +94,7 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
         </div>
       </div>
 
-      {showInviteHint && <InviteHintOverlay targetRef={inviteButtonRef} />}
+      {showInviteHint && canShowInvite && <InviteHintOverlay targetRef={inviteButtonRef} />}
 
       <MemberGrid />
 

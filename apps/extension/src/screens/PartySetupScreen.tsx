@@ -9,6 +9,8 @@ import type { StreamingService } from "@/lib/streaming-services";
 import "@/screens/PartySetupScreen.css";
 import { api, ApiError } from "@/services/api/client";
 import { usePlaybackSnapshot } from "@/hooks/usePlaybackSnapshot";
+import { useAuthStore } from "@/stores/auth-store";
+import { useRoomStore } from "@/stores/room-store";
 
 function ServiceIcon({ service }: { service: StreamingService }) {
   if (service.id === "YOUTUBE") {
@@ -48,7 +50,7 @@ export default function PartySetupScreen({
   tabTitle: string;
   tabUrl: string;
   onBack: () => void;
-  onEnterRoom: (inviteUrl: string) => void;
+  onEnterRoom: () => void;
   readPlaybackSnapshot?: () => Promise<PlaybackSnapshot | null>;
 }) {
   const liveSnapshot = usePlaybackSnapshot(
@@ -59,6 +61,9 @@ export default function PartySetupScreen({
     ? `${liveSnapshot.title} (${formatPlaybackTime(liveSnapshot.currentTime)})`
     : tabTitle;
 
+  const selfUser = useAuthStore((s) => s.user);
+  const enterRoom = useRoomStore((s) => s.enterRoom);
+
   const [allowControl, setAllowControl] = useState(false);
   const [allowShare, setAllowShare] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -68,13 +73,27 @@ export default function PartySetupScreen({
     setIsStarting(true);
     setError(null);
     try {
-      const { inviteUrl } = await api.createRoom({
+      const { room, inviteUrl } = await api.createRoom({
         name: tabTitle.slice(0, 100),
         everyoneCanControl: allowControl,
         allowMembersToShareInvite: allowShare,
         media: { provider: service.id, mediaId: null, url: tabUrl },
       });
-      onEnterRoom(inviteUrl);
+      enterRoom({
+        service,
+        tabId,
+        tabTitle,
+        roomId: room.id,
+        isHost: true,
+        everyoneCanControl: room.everyoneCanControl,
+        canShareInvite: true,
+        inviteUrl,
+        members: [
+          { id: room.host.id, name: "You", avatarId: selfUser?.avatarId ?? "1", isHost: true },
+        ],
+        readPlaybackSnapshot,
+      });
+      onEnterRoom();
     } catch (e) {
       setError(startPartyErrorMessage(e));
     } finally {

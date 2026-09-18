@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import type { PlaybackSnapshot } from "@/lib/playback-messages";
 import type { StreamingService } from "@/lib/streaming-services";
+import { api } from "@/services/api/client";
 
 export interface RoomMember {
   id: string;
@@ -33,11 +34,29 @@ export interface FloatingReaction {
   left: number;
 }
 
+// A member's initial mic/sync UI state is always the same regardless of
+// who they are (no real mic/buffering signal is wired up yet) — callers
+// only need to supply identity, not the full RoomMember shape.
+export interface RoomMemberSeed {
+  id: string;
+  name: string;
+  avatarId: string;
+  isHost: boolean;
+}
+
 export interface RoomIdentity {
   service: StreamingService;
   tabId: number;
   tabTitle: string;
-  inviteUrl: string;
+  roomId: string;
+  isHost: boolean;
+  everyoneCanControl: boolean;
+  // Whether *this* client is allowed to see/share an invite link — true
+  // for the host always, true for a member only when the host has turned
+  // on "let members share the invite".
+  canShareInvite: boolean;
+  inviteUrl: string | null;
+  members: RoomMemberSeed[];
   readPlaybackSnapshot?: () => Promise<PlaybackSnapshot | null>;
 }
 
@@ -53,13 +72,6 @@ export const ROOM_REACTIONS: RoomReaction[] = [
   { id: "cry", label: "Crying", icon: "/emoji/loudly-crying-face.svg" },
   { id: "open-mouth", label: "Surprised", icon: "/emoji/face-with-open-mouth.svg" },
   { id: "fire", label: "Fire", icon: "/emoji/fire.svg" },
-];
-
-// Room membership/chat are real backend features that aren't wired up yet
-// (see docs/implementation-plan.md) — UI-only, same as features/chat/ChatPanel.
-// A freshly created room always starts with just the host.
-const INITIAL_MEMBERS: RoomMember[] = [
-  { id: "you", name: "You", avatarId: "1", isHost: true, muted: true, synced: true },
 ];
 
 interface RoomState {
@@ -106,7 +118,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   selfMuted: true,
   selfVideoOff: false,
 
-  members: INITIAL_MEMBERS,
+  members: [],
   messages: [],
   draft: "",
   isPeerTyping: false,
@@ -117,7 +129,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   enterRoom: (identity) =>
     set({
       identity,
-      members: INITIAL_MEMBERS,
+      members: identity.members.map((m) => ({ ...m, muted: true, synced: true })),
       messages: [],
       draft: "",
       isPeerTyping: false,
@@ -129,11 +141,21 @@ export const useRoomStore = create<RoomState>((set, get) => ({
       showInviteHint: inviteHintUnseen(),
     }),
 
-  leaveRoom: () => set({ identity: null }),
+  // Clears local state immediately (leaving always feels instant), then
+  // best-effort tells the server — a failed request here shouldn't trap
+  // the user in a room screen they've already left visually.
+  leaveRoom: () => {
+    const identity = get().identity;
+    set({ identity: null });
+    if (!identity) return;
+    void (identity.isHost ? api.endRoom(identity.roomId) : api.leaveRoom(identity.roomId)).catch(
+      () => undefined,
+    );
+  },
 
   copyInvite: async () => {
     const { identity } = get();
-    if (!identity) return;
+    if (!identity?.inviteUrl) return;
     try {
       await navigator.clipboard.writeText(identity.inviteUrl);
     } catch {

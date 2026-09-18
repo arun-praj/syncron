@@ -2,12 +2,16 @@ import {
   createRoom as createRoomRequest,
   createRoomResponse,
   errorResponse,
+  inviteResponse,
+  joinRoom as joinRoomRequest,
+  joinRoomResponse,
+  membersResponse,
   meResponse,
   onboarding as onboardingRequest,
   onboardingResponse,
   profileUpdate as profileUpdateRequest,
 } from "@syncron/protocol";
-import type { z } from "zod";
+import { z } from "zod";
 
 import { getStoredToken } from "~/services/auth/client";
 
@@ -44,6 +48,7 @@ async function request<T>(
     },
   });
 
+  if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => null);
 
   if (!res.ok) {
@@ -77,5 +82,29 @@ export const api = {
     request("/api/v1/rooms", createRoomResponse, {
       method: "POST",
       body: JSON.stringify(createRoomRequest.parse(input)),
+    }),
+
+  joinRoom: (invite: string) =>
+    request("/api/v1/rooms/join", joinRoomResponse, {
+      method: "POST",
+      body: JSON.stringify(joinRoomRequest.parse({ invite })),
+    }),
+
+  getRoomMembers: (roomId: string) =>
+    request(`/api/v1/rooms/${roomId}/members`, membersResponse, { method: "GET" }),
+
+  getInvite: (roomId: string) =>
+    request(`/api/v1/rooms/${roomId}/invite`, inviteResponse, { method: "GET" }),
+
+  leaveRoom: (roomId: string) =>
+    request(`/api/v1/rooms/${roomId}/leave`, z.void(), {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  endRoom: (roomId: string) =>
+    request(`/api/v1/rooms/${roomId}/end`, z.void(), {
+      method: "POST",
+      body: JSON.stringify({}),
     }),
 };

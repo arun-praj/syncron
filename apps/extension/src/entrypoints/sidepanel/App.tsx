@@ -11,7 +11,6 @@ import PartySetupScreen from "@/screens/PartySetupScreen";
 import ProfileScreen from "@/screens/ProfileScreen";
 import RoomScreen from "@/screens/RoomScreen";
 import { useAuthStore } from "@/stores/auth-store";
-import { useRoomStore } from "@/stores/room-store";
 
 async function openService(service: StreamingService) {
   await browser.runtime.sendMessage({
@@ -29,7 +28,6 @@ type Page = "auto" | "home" | "profile" | "how-it-works" | "room";
 export default function App() {
   const { status, hydrate } = useAuthStore();
   const [page, setPage] = useState<Page>("auto");
-  const enterRoom = useRoomStore((s) => s.enterRoom);
   const detected = useDetectedStreamingTab();
 
   useEffect(() => {
@@ -78,15 +76,7 @@ export default function App() {
         tabTitle={detected.title}
         tabUrl={detected.url}
         onBack={() => setPage("home")}
-        onEnterRoom={(inviteUrl) => {
-          enterRoom({
-            inviteUrl,
-            service: detected.service,
-            tabId: detected.tabId,
-            tabTitle: detected.title,
-          });
-          setPage("room");
-        }}
+        onEnterRoom={() => setPage("room")}
       />
     );
   }
