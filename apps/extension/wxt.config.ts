@@ -14,5 +14,11 @@ export default defineConfig({
       "https://www.spotify.com/*",
       "https://www.netflix.com/*",
     ],
+    web_accessible_resources: [
+      {
+        resources: ["static/services/youtube.svg"],
+        matches: ["https://www.youtube.com/*"],
+      },
+    ],
   },
 });

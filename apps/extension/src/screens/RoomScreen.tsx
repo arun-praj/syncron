@@ -15,6 +15,7 @@ import {
 import { ROOM_MOCK_MEMBERS, type RoomMember } from "@/features/room/room-mock-data";
 import { usePlaybackSnapshot } from "@/hooks/usePlaybackSnapshot";
 import { formatPlaybackTime } from "@/lib/format-time";
+import type { PlaybackSnapshot } from "@/lib/playback-messages";
 import type { StreamingService } from "@/lib/streaming-services";
 
 export default function RoomScreen({
@@ -24,6 +25,7 @@ export default function RoomScreen({
   inviteUrl,
   onBack,
   onLeave,
+  readPlaybackSnapshot,
 }: {
   service: StreamingService;
   tabId: number;
@@ -31,8 +33,12 @@ export default function RoomScreen({
   inviteUrl: string;
   onBack: () => void;
   onLeave: () => void;
+  readPlaybackSnapshot?: () => Promise<PlaybackSnapshot | null>;
 }) {
-  const liveSnapshot = usePlaybackSnapshot(service.id === "YOUTUBE" ? tabId : null);
+  const liveSnapshot = usePlaybackSnapshot(
+    service.id === "YOUTUBE" ? tabId : null,
+    readPlaybackSnapshot,
+  );
   const videoTitle = liveSnapshot?.title ?? tabTitle;
   const isPlaying = liveSnapshot ? !liveSnapshot.paused : false;
   const timeLabel = liveSnapshot ? formatPlaybackTime(liveSnapshot.currentTime) : "--:--";

@@ -1,98 +1,248 @@
 import { createRoot, type Root } from "react-dom/client";
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { browser } from "wxt/browser";
 
-import { CallOverlay } from "@/features/call/CallOverlay";
-import { ChatPanel } from "@/features/chat/ChatPanel";
-import { isPlaybackSnapshotRequest, type PlaybackSnapshot } from "@/lib/playback-messages";
+import {
+  isActivateYoutubeSidebarMessage,
+  YOUTUBE_CONTENT_READY,
+  type ActivateYoutubeSidebarMessage,
+} from "@/lib/extension-messages";
+import { readPagePlaybackSnapshot } from "@/lib/page-playback";
+import { isPlaybackSnapshotRequest } from "@/lib/playback-messages";
+import { STREAMING_SERVICES } from "@/lib/streaming-services";
+import OnboardingScreen from "@/screens/OnboardingScreen";
+import PartySetupScreen from "@/screens/PartySetupScreen";
+import RoomScreen from "@/screens/RoomScreen";
+import { watchStoredSession } from "@/services/auth/client";
+import { useAuthStore } from "@/stores/auth-store";
 
 import "@/style.css";
 
-type Tab = "chat" | "call";
+const YOUTUBE = STREAMING_SERVICES.find((service) => service.id === "YOUTUBE")!;
+const SIDEBAR_WIDTH = 380;
 
-// Read-only snapshot of the page's <video> element for display purposes
-// (e.g. "Me at the zoo (1:32)" in the party-setup screen). This
-// deliberately stays a plain HTML5 video read, not a YouTube player API
-// integration — docs/extension-architecture.md reserves that heavier
-// integration for actual playback *control* fidelity, which isn't needed
-// just to report position.
-function readPlaybackSnapshot(): PlaybackSnapshot | null {
-  const video = document.querySelector("video");
-  if (!video || Number.isNaN(video.duration)) return null;
-
-  // YouTube sets the tab title to "<video title> - YouTube" on watch
-  // pages; stripping that suffix is far more stable than depending on
-  // YouTube's internal (frequently-changing) title DOM structure.
-  const title = document.title.replace(/ - YouTube$/, "");
-
-  return { title, currentTime: video.currentTime, duration: video.duration, paused: video.paused };
+interface ActiveRoom {
+  inviteUrl: string;
+  tabTitle: string;
 }
 
-function SyncronOverlay() {
-  const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>("chat");
+function useYoutubeTabContext(tabId: number) {
+  const [context, setContext] = useState(() => ({
+    tabTitle: document.title.replace(/ - YouTube$/, "") || YOUTUBE.name,
+    tabUrl: location.href,
+  }));
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-[2147483647] flex items-center gap-2 rounded-full bg-gradient-to-b from-brand-top to-brand-bottom px-4 py-3 font-sans text-btn font-semibold text-white shadow-btn-primary hover:shadow-btn-primary-hover">
-        Syncron
-      </button>
-    );
-  }
+  useEffect(() => {
+    const refresh = () =>
+      setContext({
+        tabTitle: document.title.replace(/ - YouTube$/, "") || YOUTUBE.name,
+        tabUrl: location.href,
+      });
 
+    window.addEventListener("popstate", refresh);
+    window.addEventListener("yt-navigate-finish", refresh);
+    return () => {
+      window.removeEventListener("popstate", refresh);
+      window.removeEventListener("yt-navigate-finish", refresh);
+    };
+  }, [tabId]);
+
+  return context;
+}
+
+function useYoutubePageLayout(open: boolean) {
+  useEffect(() => {
+    const app = document.querySelector<HTMLElement>("ytd-app");
+    if (!app || !open) return;
+
+    const previousMarginRight = app.style.marginRight;
+    const previousWidth = app.style.width;
+    app.style.marginRight = `${SIDEBAR_WIDTH}px`;
+    app.style.width = `calc(100% - ${SIDEBAR_WIDTH}px)`;
+
+    return () => {
+      app.style.marginRight = previousMarginRight;
+      app.style.width = previousWidth;
+    };
+  }, [open]);
+}
+
+function SidebarFrame({
+  open,
+  onClose,
+  onOpen,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onOpen: () => void;
+  children: ReactNode;
+}) {
   return (
-    <div className="fixed bottom-5 right-5 z-[2147483647] flex h-[520px] w-[340px] flex-col overflow-hidden rounded-card border border-border bg-white font-sans shadow-card">
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <div className="flex gap-1 rounded-full bg-neutral-100 p-1">
+    <>
+      <aside
+        aria-label="Syncron"
+        className={`fixed right-0 top-0 z-[2147483647] h-screen w-[380px] flex-col border-l border-border bg-bg font-sans shadow-2xl ${
+          open ? "flex" : "hidden"
+        }`}>
+        <div className="flex h-11 flex-shrink-0 items-center justify-between border-b border-border bg-white px-4">
+          <span className="text-[14px] font-bold text-ink-primary">Syncron</span>
           <button
             type="button"
-            onClick={() => setTab("chat")}
-            className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
-              tab === "chat" ? "bg-white text-ink-primary shadow-sm" : "text-ink-secondary"
-            }`}>
-            Chat
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("call")}
-            className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
-              tab === "call" ? "bg-white text-ink-primary shadow-sm" : "text-ink-secondary"
-            }`}>
-            Call
+            onClick={onClose}
+            aria-label="Minimize Syncron"
+            className="rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-neutral-100 hover:text-ink-primary">
+            Hide
           </button>
         </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      </aside>
+      {!open && (
         <button
           type="button"
-          onClick={() => setOpen(false)}
-          className="px-1 text-ink-secondary hover:text-ink-primary"
-          aria-label="Close">
-          ✕
+          onClick={onOpen}
+          aria-label="Open Syncron sidebar"
+          className="fixed right-3 top-1/2 z-[2147483647] -translate-y-1/2 rounded-full bg-gradient-to-b from-brand-top to-brand-bottom px-3 py-2 font-sans text-[12px] font-semibold text-white shadow-btn-primary">
+          Syncron
         </button>
-      </div>
-
-      <div className="flex-1 overflow-hidden">{tab === "chat" ? <ChatPanel /> : <CallOverlay />}</div>
-    </div>
+      )}
+    </>
   );
 }
 
+function SyncronSidebar({ tabId }: { tabId: number }) {
+  const { status, hydrate } = useAuthStore();
+  const [open, setOpen] = useState(true);
+  const [page, setPage] = useState<"setup" | "room">("setup");
+  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null);
+  const context = useYoutubeTabContext(tabId);
+  const readSnapshot = useCallback(async () => readPagePlaybackSnapshot(), []);
+
+  useYoutubePageLayout(open);
+
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
+
+  useEffect(() => watchStoredSession(() => void hydrate()), [hydrate]);
+
+  useEffect(() => {
+    const onActivation = (message: unknown) => {
+      if (!isActivateYoutubeSidebarMessage(message) || message.tabId !== tabId) return;
+      setOpen(true);
+    };
+
+    browser.runtime.onMessage.addListener(onActivation);
+    return () => browser.runtime.onMessage.removeListener(onActivation);
+  }, [tabId]);
+
+  const setup = useMemo(
+    () => (
+      <PartySetupScreen
+        service={YOUTUBE}
+        tabId={tabId}
+        tabTitle={context.tabTitle}
+        tabUrl={context.tabUrl}
+        readPlaybackSnapshot={readSnapshot}
+        onBack={() => setOpen(false)}
+        onEnterRoom={(inviteUrl) => {
+          setActiveRoom({ inviteUrl, tabTitle: context.tabTitle });
+          setPage("room");
+        }}
+      />
+    ),
+    [context.tabTitle, context.tabUrl, readSnapshot, tabId],
+  );
+
+  let content: ReactNode;
+  if (status === "loading") {
+    content = <div className="flex min-h-full items-center justify-center text-subtext text-ink-secondary">Loading…</div>;
+  } else if (status === "unavailable") {
+    content = (
+      <div className="flex min-h-full flex-col items-center justify-center px-6 text-center text-subtext text-ink-secondary">
+        <p>Couldn’t verify your session.</p>
+        <button type="button" onClick={() => void hydrate()} className="mt-3 text-accent hover:underline">
+          Try again
+        </button>
+      </div>
+    );
+  } else if (status === "signed-out" || status === "needs-verification") {
+    content = (
+      <div className="flex min-h-full flex-col items-center justify-center px-6 text-center">
+        <h1 className="text-h1 font-bold text-ink-primary">Open Syncron</h1>
+        <p className="mt-2 text-subtext text-ink-secondary">Use the extension popup to sign in and continue.</p>
+      </div>
+    );
+  } else if (status === "needs-onboarding") {
+    content = <OnboardingScreen />;
+  } else if (page === "room" && activeRoom) {
+    content = (
+      <RoomScreen
+        service={YOUTUBE}
+        tabId={tabId}
+        tabTitle={activeRoom.tabTitle}
+        inviteUrl={activeRoom.inviteUrl}
+        readPlaybackSnapshot={readSnapshot}
+        onBack={() => setPage("setup")}
+        onLeave={() => {
+          setActiveRoom(null);
+          setPage("setup");
+        }}
+      />
+    );
+  } else {
+    content = setup;
+  }
+
+  return (
+    <SidebarFrame open={open} onClose={() => setOpen(false)} onOpen={() => setOpen(true)}>
+      {content}
+    </SidebarFrame>
+  );
+}
+
+async function waitForYoutubeActivation(): Promise<ActivateYoutubeSidebarMessage | undefined> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (activation?: ActivateYoutubeSidebarMessage) => {
+      if (settled) return;
+      settled = true;
+      browser.runtime.onMessage.removeListener(onMessage);
+      resolve(activation);
+    };
+    const onMessage = (message: unknown) => {
+      if (isActivateYoutubeSidebarMessage(message)) finish(message);
+    };
+
+    browser.runtime.onMessage.addListener(onMessage);
+    void browser.runtime
+      .sendMessage({ type: YOUTUBE_CONTENT_READY })
+      .then((message) => {
+        if (isActivateYoutubeSidebarMessage(message)) finish(message);
+      })
+      .catch(() => undefined);
+  });
+}
+
 export default defineContentScript({
-  matches: ["https://www.youtube.com/watch*"],
+  matches: ["https://www.youtube.com/*"],
   cssInjectionMode: "ui",
   async main(ctx) {
     browser.runtime.onMessage.addListener((message) => {
       if (!isPlaybackSnapshotRequest(message)) return;
-      return Promise.resolve(readPlaybackSnapshot());
+      return Promise.resolve(readPagePlaybackSnapshot());
     });
 
+    const activation = await waitForYoutubeActivation();
+    if (!isActivateYoutubeSidebarMessage(activation)) return;
+
     const ui = await createShadowRootUi(ctx, {
-      name: "syncron-overlay",
+      name: "syncron-sidebar",
       position: "inline",
       anchor: "body",
       onMount(container): Root {
         const root = createRoot(container);
-        root.render(<SyncronOverlay />);
+        root.render(<SyncronSidebar tabId={activation.tabId} />);
         return root;
       },
       onRemove(root) {

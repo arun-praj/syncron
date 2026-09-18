@@ -21,7 +21,7 @@ extension/
 │   ├── background/
 │   ├── content/
 │   ├── popup/
-│   └── room-ui/ (side panel/overlay depending browser capability)
+│   └── room-ui/ (tab-scoped in-page sidebar/overlay)
 ├── components/
 ├── stores/
 ├── services/
@@ -57,7 +57,9 @@ Avoid making the background script the sole owner of WebRTC media tracks if brow
 - observe media state,
 - apply remote playback state,
 - emit normalized local playback actions,
-- communicate with background/room UI using extension messaging.
+- communicate with background/room UI using extension messaging,
+- mount room UI only after the background authorizes that tab,
+- keep mounted room UI alive while the browser switches tabs.
 
 Do not inject backend secrets or LiveKit secrets into page context.
 
@@ -174,6 +176,11 @@ Suggested stores:
 - ephemeral chat UI store.
 
 Do not persist chat store to browser storage.
+
+The YouTube sidebar owns setup and room UI state in the content-script React
+tree. Its target tab ID is the only activation marker stored in
+`storage.session`; invite URLs, chat, playback state and credentials remain
+transient.
 
 ## 12. Browser storage
 

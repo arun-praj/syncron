@@ -9,7 +9,7 @@ export default function HomeScreen({
   onOpenHowItWorks,
 }: {
   onOpenProfile: () => void;
-  onOpenService?: (href: string) => void;
+  onOpenService?: (service: (typeof STREAMING_SERVICES)[number]) => void;
   onOpenHowItWorks: () => void;
 }) {
   const { user } = useAuthStore();
@@ -54,7 +54,7 @@ export default function HomeScreen({
               onClick={(event) => {
                 if (!onOpenService) return;
                 event.preventDefault();
-                onOpenService(service.href);
+                onOpenService(service);
               }}
               className="flex items-center gap-3.5 rounded-xl border border-border p-3.5 transition-colors hover:border-border-input hover:bg-neutral-50">
               <img src={service.icon} alt={service.name} className="h-10 w-10 flex-shrink-0 rounded-[10px]" />

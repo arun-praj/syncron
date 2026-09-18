@@ -1,66 +1,69 @@
-import { STREAMING_SERVICES } from "@/lib/streaming-services";
+import { storage } from "wxt/utils/storage";
 
-const SERVICE_ORIGINS = new Set(STREAMING_SERVICES.map((service) => service.origin));
-const DEFAULT_POPUP = "popup.html";
+import {
+  ACTIVATE_YOUTUBE_SIDEBAR,
+  isOpenYoutubeSidebarMessage,
+  isOpenServiceTabMessage,
+  isYoutubeContentReadyMessage,
+} from "@/lib/extension-messages";
 
-function originOf(url: string | undefined): string {
-  if (!url) return "";
-  try {
-    return new URL(url).origin;
-  } catch {
-    return "";
-  }
+const TARGET_TABS_KEY = "session:syncronTargetYoutubeTabs" as const;
+
+async function targetTabs(): Promise<number[]> {
+  return (await storage.getItem<number[]>(TARGET_TABS_KEY)) ?? [];
 }
 
-// Side panels can only be opened programmatically from inside a user
-// gesture, so there's no API to pop it open unprompted the moment a
-// supported tab loads. Instead: clear the per-tab popup on supported tabs
-// (paired with openPanelOnActionClick below) so clicking the toolbar icon
-// there opens the side panel directly instead of the popup; every other
-// tab keeps the normal popup.
-async function syncTabActionSurface(tabId: number, url: string | undefined) {
-  const supported = SERVICE_ORIGINS.has(originOf(url));
-  await Promise.all([
-    supported
-      ? browser.sidePanel.setOptions({ tabId, path: "sidepanel.html", enabled: true })
-      : Promise.resolve(),
-    browser.action.setPopup({ tabId, popup: supported ? "" : DEFAULT_POPUP }),
-  ]);
+async function setTargetTab(tabId: number): Promise<void> {
+  const tabs = await targetTabs();
+  if (!tabs.includes(tabId)) await storage.setItem(TARGET_TABS_KEY, [...tabs, tabId]);
+}
+
+async function clearTargetTab(tabId: number): Promise<void> {
+  const tabs = await targetTabs();
+  await storage.setItem(
+    TARGET_TABS_KEY,
+    tabs.filter((candidate) => candidate !== tabId),
+  );
+}
+
+async function isTargetTab(tabId: number): Promise<boolean> {
+  return (await targetTabs()).includes(tabId);
+}
+
+async function activateYoutubeTab(tabId: number): Promise<void> {
+  await setTargetTab(tabId);
+  await browser.tabs
+    .sendMessage(tabId, { type: ACTIVATE_YOUTUBE_SIDEBAR, tabId })
+    .catch(() => undefined);
 }
 
 export default defineBackground(() => {
-  void browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  browser.runtime.onMessage.addListener((message, sender) => {
+    if (isOpenServiceTabMessage(message)) {
+      return browser.tabs.create({ url: message.href, active: true }).then(async (tab) => {
+        if (tab.id !== undefined && message.serviceId === "YOUTUBE") {
+          await activateYoutubeTab(tab.id);
+        }
+      });
+    }
 
-  // Keep the panel enabled while tabs change. Disabling it on an unsupported
-  // tab closes an already-open panel, and Edge will not reopen it when the
-  // user returns to the supported tab without another gesture.
-  void browser.sidePanel.setOptions({ path: "sidepanel.html", enabled: true });
+    if (isOpenYoutubeSidebarMessage(message)) {
+      return activateYoutubeTab(message.tabId);
+    }
 
-  // The service worker's top-level code reruns on every startup (install,
-  // browser relaunch, or waking for an event), so re-check every open tab
-  // each time rather than only reacting to future navigations — otherwise
-  // a tab already sitting on a supported site when the extension
-  // installs/reloads would be stuck without a side panel until it
-  // happened to navigate again.
-  void browser.tabs.query({}).then((tabs) => {
-    for (const tab of tabs) {
-      if (tab.id !== undefined) void syncTabActionSurface(tab.id, tab.url);
+    if (isYoutubeContentReadyMessage(message) && sender.tab?.id !== undefined) {
+      return isTargetTab(sender.tab.id).then((target) =>
+        target
+          ? { type: ACTIVATE_YOUTUBE_SIDEBAR, tabId: sender.tab!.id! }
+          : undefined,
+      );
     }
   });
 
-  browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (!changeInfo.url) return;
-    void syncTabActionSurface(tabId, tab.url);
+  browser.tabs.onRemoved.addListener((tabId) => {
+    void clearTargetTab(tabId);
   });
 
-  // Session state lives in chrome.storage.local (see
-  // src/services/auth/client.ts) so popup and content-script contexts can
-  // all read it directly without round-tripping through the background
-  // worker. This entrypoint currently only owns extension lifecycle
-  // logging; message routing for room/LiveKit coordination is future work
-  // (see docs/extension-architecture.md §3), out of scope for this
-  // auth-focused pass. The side-panel/action scoping above is the only
-  // other background behavior needed by the current popup flow.
   browser.runtime.onInstalled.addListener(() => {
     console.log("[Syncron] background service worker ready");
   });

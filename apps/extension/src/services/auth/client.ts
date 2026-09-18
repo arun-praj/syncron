@@ -6,7 +6,7 @@ import { storage } from "wxt/utils/storage";
 // Override via a WXT env file (WXT_API_URL) for other environments.
 const API_BASE_URL = import.meta.env.WXT_API_URL ?? "http://localhost:3001";
 
-const TOKEN_KEY = "local:authToken" as const;
+export const AUTH_TOKEN_KEY = "local:authToken" as const;
 
 // The backend mounts Better Auth with the `bearer()` plugin (see
 // packages/auth/src/index.ts) instead of relying on cookies, since a
@@ -21,19 +21,23 @@ export const authClient = createAuthClient({
   fetchOptions: {
     auth: {
       type: "Bearer",
-      token: async () => (await storage.getItem<string>(TOKEN_KEY)) ?? undefined,
+      token: async () => (await storage.getItem<string>(AUTH_TOKEN_KEY)) ?? undefined,
     },
     onSuccess: async (ctx) => {
       const token = ctx.response.headers.get("set-auth-token");
-      if (token) await storage.setItem(TOKEN_KEY, token);
+      if (token) await storage.setItem(AUTH_TOKEN_KEY, token);
     },
   },
 });
 
 export async function getStoredToken(): Promise<string | null> {
-  return (await storage.getItem<string>(TOKEN_KEY)) ?? null;
+  return (await storage.getItem<string>(AUTH_TOKEN_KEY)) ?? null;
 }
 
 export async function clearStoredSession(): Promise<void> {
-  await storage.removeItem(TOKEN_KEY);
+  await storage.removeItem(AUTH_TOKEN_KEY);
+}
+
+export function watchStoredSession(onChange: () => void): () => void {
+  return storage.watch<string>(AUTH_TOKEN_KEY, onChange);
 }

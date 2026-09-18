@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { browser } from "wxt/browser";
 
 import { isRateLimited } from "@/auth-flow";
 import { Button } from "@/components/Button";
 import { ChevronLeftIcon } from "@/components/icons";
 import { formatPlaybackTime } from "@/lib/format-time";
+import type { PlaybackSnapshot } from "@/lib/playback-messages";
 import type { StreamingService } from "@/lib/streaming-services";
 import { api, ApiError } from "@/services/api/client";
 import { usePlaybackSnapshot } from "@/hooks/usePlaybackSnapshot";
@@ -22,6 +24,7 @@ export default function PartySetupScreen({
   tabUrl,
   onBack,
   onEnterRoom,
+  readPlaybackSnapshot,
 }: {
   service: StreamingService;
   tabId: number;
@@ -29,8 +32,12 @@ export default function PartySetupScreen({
   tabUrl: string;
   onBack: () => void;
   onEnterRoom: (inviteUrl: string) => void;
+  readPlaybackSnapshot?: () => Promise<PlaybackSnapshot | null>;
 }) {
-  const liveSnapshot = usePlaybackSnapshot(service.id === "YOUTUBE" ? tabId : null);
+  const liveSnapshot = usePlaybackSnapshot(
+    service.id === "YOUTUBE" ? tabId : null,
+    readPlaybackSnapshot,
+  );
   const detailLine = liveSnapshot
     ? `${liveSnapshot.title} (${formatPlaybackTime(liveSnapshot.currentTime)})`
     : tabTitle;
@@ -75,7 +82,11 @@ export default function PartySetupScreen({
 
       <div className="flex flex-1 flex-col">
         <div className="flex flex-shrink-0 items-center gap-2.5 px-[18px] pb-1.5 pt-4">
-          <img src={service.icon} alt="" className="h-[34px] w-[34px] flex-shrink-0 rounded-[9px]" />
+          <img
+            src={browser.runtime.getURL(service.icon.replace(/^\/+/, ""))}
+            alt=""
+            className="h-[34px] w-[34px] flex-shrink-0 rounded-[9px]"
+          />
           <div className="min-w-0">
             <div className="text-[13px] font-semibold tracking-[-0.005em] text-ink-primary">
               {service.name} detected

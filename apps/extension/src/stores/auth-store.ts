@@ -6,7 +6,11 @@ import type {
 } from "@syncron/protocol";
 
 import { authErrorMessage, needsEmailVerification } from "~/auth-flow";
-import { authClient, clearStoredSession, getStoredToken } from "~/services/auth/client";
+import {
+  authClient,
+  clearStoredSession,
+  getStoredToken,
+} from "~/services/auth/client";
 import { api, ApiError } from "~/services/api/client";
 
 export type AuthStatus =
@@ -14,6 +18,7 @@ export type AuthStatus =
   | "signed-out"
   | "needs-verification"
   | "needs-onboarding"
+  | "unavailable"
   | "ready";
 
 export interface SyncronUser {
@@ -62,6 +67,7 @@ interface AuthState {
 // is the safer bet here since that's the one actually exercised against a
 // live backend.
 let pendingPassword: string | null = null;
+let authRevision = 0;
 
 function statusFor(user: SyncronUser): AuthStatus {
   return user.onboardingCompletedAt ? "ready" : "needs-onboarding";
@@ -83,17 +89,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   hydrate: async () => {
+    if (get().isSubmitting) return;
+    const revision = authRevision;
     const token = await getStoredToken();
     if (!token) {
-      set({ status: "signed-out" });
+      if (revision === authRevision) set({ status: "signed-out" });
       return;
     }
     try {
       const { user } = await api.me();
-      set({ status: statusFor(user), user });
-    } catch {
-      await clearStoredSession();
-      set({ status: "signed-out" });
+      if (revision === authRevision) set({ status: statusFor(user), user, error: null });
+    } catch (error) {
+      if (revision !== authRevision) return;
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        await clearStoredSession();
+        if (revision === authRevision) set({ status: "signed-out", user: null });
+        return;
+      }
+      set({
+        status: "unavailable",
+        error: "Couldn’t verify your session. Check your connection and try again.",
+      });
     }
   },
 
@@ -110,6 +126,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signIn: async ({ email, password }) => {
+    authRevision += 1;
     set({ isSubmitting: true, error: null, info: null });
     const { error } = await authClient.signIn.email({ email, password });
     if (error) {
@@ -218,6 +235,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
+    authRevision += 1;
     set({ isSubmitting: true });
     try {
       await authClient.signOut();
