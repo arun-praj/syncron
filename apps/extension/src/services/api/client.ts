@@ -5,11 +5,15 @@ import {
   inviteResponse,
   joinRoom as joinRoomRequest,
   joinRoomResponse,
+
+
+  livekitResponse,
   membersResponse,
   meResponse,
   onboarding as onboardingRequest,
   onboardingResponse,
   profileUpdate as profileUpdateRequest,
+  ticketResponse,
 } from "@syncron/protocol";
 import { z } from "zod";
 
@@ -17,7 +21,10 @@ import { getStoredToken } from "~/services/auth/client";
 
 // Same origin as the Better Auth client (docker-compose.yml maps the API
 // container to host port 8000 in dev).
-const API_BASE_URL = import.meta.env.WXT_API_URL ?? "http://localhost:8000";
+export const API_BASE_URL = import.meta.env.WXT_API_URL ?? "http://localhost:8000";
+// The room WebSocket (services/playback-socket) upgrades on this same
+// origin, just over ws(s):// instead of http(s)://.
+export const WS_BASE_URL = API_BASE_URL.replace(/^http/, "ws");
 
 export class ApiError extends Error {
   code: string;
@@ -104,6 +111,18 @@ export const api = {
 
   endRoom: (roomId: string) =>
     request(`/api/v1/rooms/${roomId}/end`, z.void(), {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  getWsTicket: (roomId: string) =>
+    request(`/api/v1/rooms/${roomId}/ws-ticket`, ticketResponse, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  getLivekitToken: (roomId: string) =>
+    request(`/api/v1/rooms/${roomId}/livekit-token`, livekitResponse, {
       method: "POST",
       body: JSON.stringify({}),
     }),

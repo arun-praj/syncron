@@ -25,6 +25,7 @@ export default function App() {
       canShareInvite: true,
       inviteUrl: "https://app.syncron.example/join#invite=preview",
       members: [{ id: "you", name: "You", avatarId: "1", isHost: true }],
+      selfUserId: "you",
     });
   }, [enterRoom]);
 

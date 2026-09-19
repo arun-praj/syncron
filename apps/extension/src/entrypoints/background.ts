@@ -120,6 +120,7 @@ async function handleJoinInvite(invite: string): Promise<{ ok: true } | { ok: fa
         avatarId: m.user.avatarId ?? "1",
         isHost: m.role === "HOST",
       })),
+      selfUserId: me.user.id,
     };
 
     const tab = await browser.tabs.create({ url: room.media.url, active: true });

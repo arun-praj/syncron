@@ -41,6 +41,7 @@ export interface JoinedRoomSnapshot {
   allowMembersToShareInvite: boolean;
   inviteUrl: string | null;
   members: JoinedRoomMemberSeed[];
+  selfUserId: string;
 }
 
 export interface ActivateYoutubeSidebarMessage {

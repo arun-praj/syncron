@@ -91,7 +91,7 @@ export default function PartySetupScreen({
         members: [
           { id: room.host.id, name: "You", avatarId: selfUser?.avatarId ?? "1", isHost: true },
         ],
-        readPlaybackSnapshot,
+        selfUserId: room.host.id,
       });
       onEnterRoom();
     } catch (e) {

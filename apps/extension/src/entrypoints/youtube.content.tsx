@@ -9,7 +9,7 @@ import {
   type JoinedRoomSnapshot,
 } from "@/lib/extension-messages";
 import { readPagePlaybackSnapshot } from "@/lib/page-playback";
-import { isPlaybackSnapshotRequest, type PlaybackSnapshot } from "@/lib/playback-messages";
+import { isPlaybackSnapshotRequest } from "@/lib/playback-messages";
 import { STREAMING_SERVICES } from "@/lib/streaming-services";
 import OnboardingScreen from "@/screens/OnboardingScreen";
 import PartySetupScreen from "@/screens/PartySetupScreen";
@@ -107,12 +107,7 @@ function SidebarFrame({
   );
 }
 
-function joinedRoomToIdentity(
-  snapshot: JoinedRoomSnapshot,
-  tabId: number,
-  tabTitle: string,
-  readPlaybackSnapshot: () => Promise<PlaybackSnapshot | null>,
-): RoomIdentity {
+function joinedRoomToIdentity(snapshot: JoinedRoomSnapshot, tabId: number, tabTitle: string): RoomIdentity {
   return {
     service: YOUTUBE,
     tabId,
@@ -123,7 +118,7 @@ function joinedRoomToIdentity(
     canShareInvite: snapshot.isHost || snapshot.allowMembersToShareInvite,
     inviteUrl: snapshot.inviteUrl,
     members: snapshot.members,
-    readPlaybackSnapshot,
+    selfUserId: snapshot.selfUserId,
   };
 }
 
@@ -156,22 +151,22 @@ function SyncronSidebar({
   useEffect(() => {
     if (!initialJoinedRoom || appliedInitialJoin.current) return;
     appliedInitialJoin.current = true;
-    enterRoom(joinedRoomToIdentity(initialJoinedRoom, tabId, context.tabTitle, readSnapshot));
-  }, [initialJoinedRoom, tabId, context.tabTitle, readSnapshot, enterRoom]);
+    enterRoom(joinedRoomToIdentity(initialJoinedRoom, tabId, context.tabTitle));
+  }, [initialJoinedRoom, tabId, context.tabTitle, enterRoom]);
 
   useEffect(() => {
     const onActivation = (message: unknown) => {
       if (!isActivateYoutubeSidebarMessage(message) || message.tabId !== tabId) return;
       setOpen(true);
       if (message.joinedRoom) {
-        enterRoom(joinedRoomToIdentity(message.joinedRoom, tabId, context.tabTitle, readSnapshot));
+        enterRoom(joinedRoomToIdentity(message.joinedRoom, tabId, context.tabTitle));
         setPage("room");
       }
     };
 
     browser.runtime.onMessage.addListener(onActivation);
     return () => browser.runtime.onMessage.removeListener(onActivation);
-  }, [tabId, context.tabTitle, enterRoom, readSnapshot]);
+  }, [tabId, context.tabTitle, enterRoom]);
 
   const setup = useMemo(
     () => (

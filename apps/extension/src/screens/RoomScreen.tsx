@@ -13,7 +13,6 @@ import {
 import { MemberGrid } from "@/features/room/MemberGrid";
 import "@/features/room/room.css";
 import { RoomChat } from "@/features/room/RoomChat";
-import { usePlaybackSnapshot } from "@/hooks/usePlaybackSnapshot";
 import { formatPlaybackTime } from "@/lib/format-time";
 import { useRoomStore } from "@/stores/room-store";
 
@@ -28,30 +27,27 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   const camBlocked = useRoomStore((s) => s.camBlocked);
   const toggleSelfMute = useRoomStore((s) => s.toggleSelfMute);
   const toggleSelfVideo = useRoomStore((s) => s.toggleSelfVideo);
-  const requestMediaPermissions = useRoomStore((s) => s.requestMediaPermissions);
   const leaveRoom = useRoomStore((s) => s.leaveRoom);
+  const playbackState = useRoomStore((s) => s.playbackState);
+  const forceLeaveReason = useRoomStore((s) => s.forceLeaveReason);
 
-  const liveSnapshot = usePlaybackSnapshot(
-    identity?.service.id === "YOUTUBE" ? identity.tabId : null,
-    identity?.readPlaybackSnapshot,
-  );
   const inviteButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Prompts for mic/camera access the moment a room is entered (hosting or
-  // joining) — this only works here, not on the API's GET /join page,
-  // since getUserMedia permission is scoped to the page's own origin and
-  // the sidebar runs inside youtube.com, not the API's origin.
+  // The server removed us from the room (kicked, or the host ended the
+  // party) — identity is already cleared by forceLeave(); this just tells
+  // the parent to navigate away, same as clicking "leave" would.
   useEffect(() => {
-    void requestMediaPermissions();
-  }, [requestMediaPermissions]);
+    if (forceLeaveReason) onLeave();
+  }, [forceLeaveReason, onLeave]);
 
-  // Guards a render race between leaveRoom() clearing identity and the
-  // parent's onLeave prop swapping this screen out — never user-visible.
+  // Guards a render race between leaveRoom()/forceLeave() clearing
+  // identity and the parent's onLeave prop swapping this screen out —
+  // never user-visible.
   if (!identity) return null;
 
-  const videoTitle = liveSnapshot?.title ?? identity.tabTitle;
-  const isPlaying = liveSnapshot ? !liveSnapshot.paused : false;
-  const timeLabel = liveSnapshot ? formatPlaybackTime(liveSnapshot.currentTime) : "--:--";
+  const videoTitle = playbackState?.title ?? identity.tabTitle;
+  const isPlaying = playbackState ? !playbackState.paused : false;
+  const timeLabel = playbackState ? formatPlaybackTime(playbackState.position) : "--:--";
   const canShowInvite = identity.canShareInvite && identity.inviteUrl !== null;
 
   return (

@@ -263,7 +263,8 @@
   overflow: hidden;
   margin-bottom: 4px;
 }
-.strip-video img {
+.strip-video img,
+.strip-video video {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -335,7 +336,8 @@
   position: relative;
   overflow: hidden;
 }
-.grid-tile img {
+.grid-tile img,
+.grid-tile video {
   width: 100%;
   height: 100%;
   object-fit: cover;
