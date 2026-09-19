@@ -76,20 +76,33 @@ export class LiveKitSession {
       this.handlers.onParticipantLeft?.(participant.identity);
     });
     room.on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
-      if (topic !== CHAT_TOPIC || !participant) return;
+      if (topic !== CHAT_TOPIC) {
+        return;
+      }
+      if (!participant) {
+        console.warn("[Syncron] chat data received with no participant identity, dropping");
+        return;
+      }
       let parsed: unknown;
       try {
         parsed = JSON.parse(new TextDecoder().decode(payload));
-      } catch {
+      } catch (e) {
+        console.error("[Syncron] chat payload wasn't valid JSON", e);
         return;
       }
       // Untrusted input from another participant — validate its shape
       // before it goes anywhere near app state or rendering.
       const result = chatWireMessageSchema.safeParse(parsed);
       if (result.success) this.handlers.onChatMessage(participant.identity, result.data);
+      else console.error("[Syncron] chat payload failed validation", result.error.issues);
     });
 
-    await room.connect(url, token);
+    try {
+      await room.connect(url, token);
+    } catch (e) {
+      console.error("[Syncron] LiveKit room.connect() failed", e);
+      throw e;
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -124,8 +137,13 @@ export class LiveKitSession {
   }
 
   sendChatMessage(message: ChatWireMessage): void {
-    if (!this.room) return;
+    if (!this.room) {
+      console.warn("[Syncron] sendChatMessage called with no active LiveKit room, dropping:", message.id);
+      return;
+    }
     const payload = new TextEncoder().encode(JSON.stringify(message));
-    void this.room.localParticipant.publishData(payload, { reliable: true, topic: CHAT_TOPIC });
+    this.room.localParticipant
+      .publishData(payload, { reliable: true, topic: CHAT_TOPIC })
+      .catch((e: unknown) => console.error("[Syncron] publishData (chat) failed", e));
   }
 }

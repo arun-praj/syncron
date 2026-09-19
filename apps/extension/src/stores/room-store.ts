@@ -317,9 +317,10 @@ export const useRoomStore = create<RoomState>((set, get) => ({
         return;
       }
       set({ selfMuted: !micGranted, micBlocked: !micGranted, selfVideoOff: !camGranted, camBlocked: !camGranted });
-    } catch {
+    } catch (e) {
       // Playback sync still works without LiveKit — AV/chat just aren't
       // available this session (e.g. LiveKit unreachable/misconfigured).
+      console.error("[Syncron] LiveKit setup failed — AV/chat unavailable this session", e);
     }
   },
 
