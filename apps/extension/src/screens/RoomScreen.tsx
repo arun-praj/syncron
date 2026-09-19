@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { ChevronLeftIcon } from "@/components/icons";
 import { InviteHintOverlay } from "@/features/room/InviteHintOverlay";
@@ -24,8 +24,11 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   const showInviteHint = useRoomStore((s) => s.showInviteHint);
   const selfMuted = useRoomStore((s) => s.selfMuted);
   const selfVideoOff = useRoomStore((s) => s.selfVideoOff);
+  const micBlocked = useRoomStore((s) => s.micBlocked);
+  const camBlocked = useRoomStore((s) => s.camBlocked);
   const toggleSelfMute = useRoomStore((s) => s.toggleSelfMute);
   const toggleSelfVideo = useRoomStore((s) => s.toggleSelfVideo);
+  const requestMediaPermissions = useRoomStore((s) => s.requestMediaPermissions);
   const leaveRoom = useRoomStore((s) => s.leaveRoom);
 
   const liveSnapshot = usePlaybackSnapshot(
@@ -33,6 +36,14 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
     identity?.readPlaybackSnapshot,
   );
   const inviteButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Prompts for mic/camera access the moment a room is entered (hosting or
+  // joining) — this only works here, not on the API's GET /join page,
+  // since getUserMedia permission is scoped to the page's own origin and
+  // the sidebar runs inside youtube.com, not the API's origin.
+  useEffect(() => {
+    void requestMediaPermissions();
+  }, [requestMediaPermissions]);
 
   // Guards a render race between leaveRoom() clearing identity and the
   // parent's onLeave prop swapping this screen out — never user-visible.
@@ -78,7 +89,10 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
           <button
             type="button"
             onClick={toggleSelfMute}
-            aria-label={selfMuted ? "Unmute yourself" : "Mute yourself"}
+            aria-label={
+              micBlocked ? "Microphone blocked — click to allow" : selfMuted ? "Unmute yourself" : "Mute yourself"
+            }
+            title={micBlocked ? "Microphone blocked — click to allow" : undefined}
             className="self-btn"
             style={{ background: selfMuted ? "rgba(220,38,38,0.9)" : "#eff6ff" }}>
             {selfMuted ? <MicOffMiniIcon color="#fff" /> : <MicMiniIcon color="#2563eb" />}
@@ -86,7 +100,14 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
           <button
             type="button"
             onClick={toggleSelfVideo}
-            aria-label={selfVideoOff ? "Turn camera on" : "Turn camera off"}
+            aria-label={
+              camBlocked
+                ? "Camera blocked — click to allow"
+                : selfVideoOff
+                  ? "Turn camera on"
+                  : "Turn camera off"
+            }
+            title={camBlocked ? "Camera blocked — click to allow" : undefined}
             className="self-btn"
             style={{ background: selfVideoOff ? "rgba(220,38,38,0.9)" : "#eff6ff" }}>
             {selfVideoOff ? <CameraOffMiniIcon color="#fff" /> : <CameraMiniIcon color="#2563eb" />}

@@ -1,9 +1,9 @@
 import { defineConfig } from "wxt";
 
-// Same origin as the API's GET /join page (docker-compose.yml maps the API
-// container to host port 8000 in dev). Override via a WXT env file
-// (WXT_APP_URL) for other environments — must match the API's APP_URL.
-const APP_URL = process.env.WXT_APP_URL ?? "http://localhost:8000";
+// The API's GET /join page is served from the same origin as the REST API
+// (services/api/client.ts's API_BASE_URL) — reusing WXT_API_URL here
+// instead of a second env var means the two can't silently drift apart.
+const APP_URL = process.env.WXT_API_URL ?? "http://localhost:8000";
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({

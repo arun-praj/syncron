@@ -74,6 +74,20 @@ export const ROOM_REACTIONS: RoomReaction[] = [
   { id: "fire", label: "Fire", icon: "/emoji/fire.svg" },
 ];
 
+// Real getUserMedia calls — LiveKit itself isn't wired up yet, so a grant
+// is only ever used to check permission and then immediately released
+// (stopping the tracks) rather than kept open with nothing consuming it.
+async function requestMediaAccess(constraints: MediaStreamConstraints): Promise<boolean> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return false;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    stream.getTracks().forEach((track) => track.stop());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 interface RoomState {
   identity: RoomIdentity | null;
   copyLabel: string;
@@ -81,6 +95,11 @@ interface RoomState {
 
   selfMuted: boolean;
   selfVideoOff: boolean;
+  // True once a getUserMedia request for that device has been denied —
+  // the self-mute/camera buttons re-prompt instead of just toggling while
+  // this is true, since there's nothing to toggle without the permission.
+  micBlocked: boolean;
+  camBlocked: boolean;
 
   members: RoomMember[];
   messages: RoomChatMessage[];
@@ -97,6 +116,7 @@ interface RoomState {
   leaveRoom: () => void;
   copyInvite: () => Promise<void>;
   dismissInviteHint: () => void;
+  requestMediaPermissions: () => Promise<void>;
   toggleSelfMute: () => void;
   toggleSelfVideo: () => void;
   toggleMemberMute: (id: string) => void;
@@ -117,6 +137,8 @@ export const useRoomStore = create<RoomState>((set, get) => ({
 
   selfMuted: true,
   selfVideoOff: false,
+  micBlocked: false,
+  camBlocked: false,
 
   members: [],
   messages: [],
@@ -135,6 +157,8 @@ export const useRoomStore = create<RoomState>((set, get) => ({
       isPeerTyping: false,
       selfMuted: true,
       selfVideoOff: false,
+      micBlocked: false,
+      camBlocked: false,
       showReactionPicker: false,
       floatingReactions: [],
       copyLabel: "Copy invite link",
@@ -171,8 +195,42 @@ export const useRoomStore = create<RoomState>((set, get) => ({
     set({ showInviteHint: false });
   },
 
-  toggleSelfMute: () => set((s) => ({ selfMuted: !s.selfMuted })),
-  toggleSelfVideo: () => set((s) => ({ selfVideoOff: !s.selfVideoOff })),
+  // Called once on room entry (both freshly hosting and joining) — asks
+  // for mic/camera access up front so self-controls reflect what the
+  // browser actually granted, instead of starting "on" and only failing
+  // once the user tries to unmute.
+  requestMediaPermissions: async () => {
+    const [micGranted, camGranted] = await Promise.all([
+      requestMediaAccess({ audio: true }),
+      requestMediaAccess({ video: true }),
+    ]);
+    set({
+      selfMuted: !micGranted,
+      selfVideoOff: !camGranted,
+      micBlocked: !micGranted,
+      camBlocked: !camGranted,
+    });
+  },
+
+  toggleSelfMute: () => {
+    if (get().micBlocked) {
+      void requestMediaAccess({ audio: true }).then((granted) => {
+        if (granted) set({ selfMuted: false, micBlocked: false });
+      });
+      return;
+    }
+    set((s) => ({ selfMuted: !s.selfMuted }));
+  },
+
+  toggleSelfVideo: () => {
+    if (get().camBlocked) {
+      void requestMediaAccess({ video: true }).then((granted) => {
+        if (granted) set({ selfVideoOff: false, camBlocked: false });
+      });
+      return;
+    }
+    set((s) => ({ selfVideoOff: !s.selfVideoOff }));
+  },
 
   toggleMemberMute: (id) =>
     set((s) => ({
