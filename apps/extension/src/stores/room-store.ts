@@ -2,14 +2,18 @@ import { create } from "zustand";
 
 import type { StreamingService } from "@/lib/streaming-services";
 import { clearActiveYoutubeRoom, setActiveYoutubeRoom } from "@/lib/room-session";
-import { api } from "@/services/api/client";
+import { api, ApiError } from "@/services/api/client";
 import { LiveKitSession } from "@/services/livekit/client";
 import { PlaybackSyncController, type SyncedPlaybackState } from "@/services/playback-sync/controller";
 import type { ServerEvent } from "@/services/playback-socket/client";
+import type { RoomReaction } from "@/features/room/reactions";
+import { formatMemberLabel } from "@/features/room/member-label";
+import { formatPlaybackTime } from "@/lib/format-time";
 
 export interface RoomMember {
   id: string;
   name: string;
+  username?: string;
   avatarId: string;
   isHost: boolean;
   muted: boolean;
@@ -31,12 +35,6 @@ export interface RoomChatMessage {
   text: string;
 }
 
-export interface RoomReaction {
-  id: string;
-  label: string;
-  icon: string;
-}
-
 export interface FloatingReaction {
   id: string;
   icon: string;
@@ -49,6 +47,7 @@ export interface FloatingReaction {
 export interface RoomMemberSeed {
   id: string;
   name: string;
+  username?: string;
   avatarId: string;
   isHost: boolean;
 }
@@ -73,19 +72,12 @@ export interface RoomIdentity {
   initialCameraEnabled?: boolean;
 }
 
-// Self-hosted (see public/emoji/NOTICE) instead of the design's external
-// animated-PNG URLs — those fail to load inside the YouTube in-page
-// sidebar, since the host page's CSP blocks the cross-origin fetch.
-export const ROOM_REACTIONS: RoomReaction[] = [
-  { id: "thumbs-up", label: "Thumbs up", icon: "/emoji/thumbs-up.svg" },
-  { id: "joy", label: "Tears of joy", icon: "/emoji/face-with-tears-of-joy.svg" },
-  { id: "heart", label: "Heart", icon: "/emoji/red-heart.svg" },
-  { id: "party", label: "Party popper", icon: "/emoji/party-popper.svg" },
-  { id: "scream", label: "Screaming", icon: "/emoji/face-screaming-in-fear.svg" },
-  { id: "cry", label: "Crying", icon: "/emoji/loudly-crying-face.svg" },
-  { id: "open-mouth", label: "Surprised", icon: "/emoji/face-with-open-mouth.svg" },
-  { id: "fire", label: "Fire", icon: "/emoji/fire.svg" },
-];
+export interface LeaveRoomOptions {
+  disband?: boolean;
+  transferTo?: string;
+}
+
+// Self-hosted Fluent artwork avoids CSP failures inside the YouTube sidebar.
 
 function inviteHintUnseen(): boolean {
   return !localStorage.getItem("syncron_invite_hint_seen");
@@ -127,6 +119,7 @@ interface RoomState {
   playbackState: SyncedPlaybackState | null;
   autoplayBlocked: boolean;
   navigationWarning: string | null;
+  controlWarning: string | null;
   wsConnected: boolean;
   // Set when the server force-removed us (kicked, or the room ended) so
   // RoomScreen can navigate away and say why, instead of silently landing
@@ -141,14 +134,14 @@ interface RoomState {
   activeGeneration: number;
 
   enterRoom: (identity: RoomIdentity) => void;
-  leaveRoom: () => void;
+  leaveRoom: (options?: LeaveRoomOptions) => Promise<boolean>;
   copyInvite: () => Promise<void>;
   dismissInviteHint: () => void;
   toggleSelfMute: () => void;
   toggleSelfVideo: () => void;
   setDraft: (draft: string) => void;
   toggleReactionPicker: () => void;
-  sendReaction: (reaction: RoomReaction) => void;
+  sendReaction: (reaction: RoomReaction, messageId: string) => void;
 
   // Internal — called by enterRoom/PlaybackSyncController, not the UI.
   connectRealtime: () => Promise<void>;
@@ -156,6 +149,8 @@ interface RoomState {
   forceLeave: (reason: string) => void;
   showNavigationWarning: () => void;
   dismissNavigationWarning: () => void;
+  showControlWarning: () => void;
+  dismissControlWarning: () => void;
 }
 
 export const useRoomStore = create<RoomState>((set, get) => ({
@@ -179,6 +174,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   playbackState: null,
   autoplayBlocked: false,
   navigationWarning: null,
+  controlWarning: null,
   wsConnected: false,
   forceLeaveReason: null,
 
@@ -213,6 +209,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
       playbackState: null,
       autoplayBlocked: false,
       navigationWarning: null,
+      controlWarning: null,
       wsConnected: false,
       forceLeaveReason: null,
       playbackSync: null,
@@ -239,13 +236,67 @@ export const useRoomStore = create<RoomState>((set, get) => ({
     const { roomId, selfUserId } = identity;
     const generation = get().activeGeneration;
     const stillCurrent = () => get().activeGeneration === generation;
+    let isHost = identity.isHost;
+    let everyoneCanControl = identity.everyoneCanControl;
+
+    // A stale sidebar can survive a coordinator restart or a host transfer
+    // that happened while this tab was disconnected. Re-read the authoritative
+    // roster before constructing the control connection so a member never gets
+    // host controls or a Host badge from an old local snapshot.
+    try {
+      const [{ room }, { members }] = await Promise.all([
+        api.getRoom(roomId),
+        api.getRoomMembers(roomId),
+      ]);
+      if (!stillCurrent()) return;
+      const self = members.find((member) => member.user.id === selfUserId);
+      if (!self) {
+        get().forceLeave("You are no longer a member of this party.");
+        return;
+      }
+      isHost = self.role === "HOST";
+      everyoneCanControl = room.everyoneCanControl;
+      const canShareInvite = isHost || room.allowMembersToShareInvite;
+      const inviteUrl = canShareInvite
+        ? await api.getInvite(roomId).then((result) => result.inviteUrl).catch(() => identity.inviteUrl)
+        : null;
+      set((state) => ({
+        identity: state.identity
+          ? {
+              ...state.identity,
+              isHost,
+              everyoneCanControl,
+              canShareInvite,
+              inviteUrl,
+            }
+          : state.identity,
+        members: members.map((member) => ({
+          id: member.user.id,
+          name: member.user.id === selfUserId ? "You" : member.user.displayName,
+          username: member.user.username,
+          avatarId: member.user.avatarId ?? "1",
+          isHost: member.role === "HOST",
+          muted: true,
+          synced: true,
+          videoTrack: null,
+          audioTrack: null,
+        })),
+      }));
+    } catch (error) {
+      if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+        get().forceLeave("Your party session is no longer valid.");
+        return;
+      }
+      // Keep the current snapshot during a temporary API failure; the
+      // realtime connection has its own reconnect path.
+    }
 
     const playbackSync = new PlaybackSyncController(
       roomId,
       () => api.getWsTicket(roomId).then((r) => r.ticket),
       selfUserId,
-      identity.isHost,
-      identity.everyoneCanControl,
+      isHost,
+      everyoneCanControl,
       {
         onPlaybackState: (state) => {
           if (stillCurrent()) set({ playbackState: state });
@@ -258,6 +309,33 @@ export const useRoomStore = create<RoomState>((set, get) => ({
         },
         onNavigationBlocked: () => {
           if (stillCurrent()) get().showNavigationWarning();
+        },
+        onControlBlocked: () => {
+          if (stillCurrent()) get().showControlWarning();
+        },
+        onPlaybackTransition: (paused, updatedBy) => {
+          if (!stillCurrent()) return;
+          const current = get();
+          const actor = formatMemberLabel(
+            current.members.find((member) => member.id === updatedBy)
+              ?? (updatedBy === current.identity?.selfUserId ? { id: updatedBy, name: "" } : null),
+            current.identity?.selfUserId,
+          );
+          set((s) => ({
+            messages: [...s.messages, systemMessage(`${actor} ${paused ? "paused" : "resumed"} the video`)],
+          }));
+        },
+        onPlaybackSeek: (position, updatedBy) => {
+          if (!stillCurrent()) return;
+          const current = get();
+          const actor = formatMemberLabel(
+            current.members.find((member) => member.id === updatedBy)
+              ?? (updatedBy === current.identity?.selfUserId ? { id: updatedBy, name: "" } : null),
+            current.identity?.selfUserId,
+          );
+          set((s) => ({
+            messages: [...s.messages, systemMessage(`Video seeked to ${formatPlaybackTime(position)} by ${actor}`)],
+          }));
         },
         onRoomEvent: (event) => get().handleRoomEvent(roomId, event),
       },
@@ -339,6 +417,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
           const member: RoomMember = {
             id: joined.user.id,
             name: joined.user.id === s.identity?.selfUserId ? "You" : joined.user.displayName,
+            username: joined.user.username,
             avatarId: joined.user.avatarId ?? "1",
             isHost: joined.role === "HOST",
             muted: true,
@@ -348,7 +427,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
           };
           return {
             members: [...s.members, member],
-            messages: [...s.messages, systemMessage(`${joined.user.displayName} joined the party`)],
+            messages: [...s.messages, systemMessage(`${formatMemberLabel(member, s.identity?.selfUserId)} joined the party`)],
           };
         });
         return;
@@ -358,17 +437,31 @@ export const useRoomStore = create<RoomState>((set, get) => ({
           const leaving = s.members.find((m) => m.id === event.payload.userId);
           return {
             members: s.members.filter((m) => m.id !== event.payload.userId),
-            messages: leaving ? [...s.messages, systemMessage(`${leaving.name} left the party`)] : s.messages,
+            messages: leaving
+              ? [...s.messages, systemMessage(`${formatMemberLabel(leaving, s.identity?.selfUserId)} left the party`)]
+              : s.messages,
           };
         });
         return;
       }
       case "room.host_changed": {
         const hostId = event.payload.host.id;
+        const isSelfHost = hostId === get().identity?.selfUserId;
         set((s) => ({
           members: s.members.map((m) => ({ ...m, isHost: m.id === hostId })),
-          identity: s.identity ? { ...s.identity, isHost: s.identity.selfUserId === hostId } : s.identity,
+          identity: s.identity
+            ? {
+                ...s.identity,
+                isHost: isSelfHost,
+                canShareInvite: isSelfHost || s.identity.canShareInvite,
+              }
+            : s.identity,
         }));
+        if (isSelfHost) {
+          void api.getInvite(roomId).then(({ inviteUrl }) => {
+            if (get().identity?.roomId === roomId) set({ identity: { ...get().identity!, inviteUrl } });
+          }).catch(() => undefined);
+        }
         return;
       }
       case "room.settings_changed": {
@@ -376,6 +469,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
           identity: s.identity
             ? { ...s.identity, everyoneCanControl: event.payload.everyoneCanControl }
             : s.identity,
+          controlWarning: event.payload.everyoneCanControl ? null : s.controlWarning,
         }));
         return;
       }
@@ -441,21 +535,34 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   // Clears local state immediately (leaving always feels instant), then
   // best-effort tells the server — a failed request here shouldn't trap
   // the user in a room screen they've already left visually.
-  leaveRoom: () => {
+  leaveRoom: async (options = {}) => {
     const { identity, playbackSync, liveKit } = get();
+    if (!identity) return true;
+    const requiresServerDecision = Boolean(options.disband || options.transferTo);
+    if (requiresServerDecision) {
+      try {
+        await api.leaveRoom(identity.roomId, options);
+      } catch {
+        return false;
+      }
+      // A disband sends room.ended to this same client before the HTTP
+      // response arrives; that handler already cleaned up this session.
+      if (get().identity?.roomId !== identity.roomId) return true;
+    }
     playbackSync?.stop();
     void liveKit?.disconnect();
-    if (identity) void clearActiveYoutubeRoom(identity.tabId);
+    void clearActiveYoutubeRoom(identity.tabId);
     set({ identity: null, playbackSync: null, liveKit: null, liveKitReady: false, activeGeneration: ++roomGenerationCounter });
-    if (!identity) return;
-    void (identity.isHost ? api.endRoom(identity.roomId) : api.leaveRoom(identity.roomId)).catch(
-      () => undefined,
-    );
+    if (!requiresServerDecision) void api.leaveRoom(identity.roomId).catch(() => undefined);
+    return true;
   },
 
   dismissNavigationWarning: () => set({ navigationWarning: null }),
   showNavigationWarning: () =>
     set({ navigationWarning: "This video is locked to the party. Leave the party before watching another YouTube video." }),
+  dismissControlWarning: () => set({ controlWarning: null }),
+  showControlWarning: () =>
+    set({ controlWarning: "Only the host can control playback, volume, and mute in this party." }),
 
   copyInvite: async () => {
     const { identity } = get();
@@ -497,14 +604,14 @@ export const useRoomStore = create<RoomState>((set, get) => ({
 
   toggleReactionPicker: () => set((s) => ({ showReactionPicker: !s.showReactionPicker })),
 
-  sendReaction: (reaction) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  sendReaction: (reaction, messageId) => {
     set((s) => ({
-      floatingReactions: [...s.floatingReactions, { id, icon: reaction.icon, left: 15 + Math.random() * 60 }],
-      showReactionPicker: false,
+      floatingReactions: s.floatingReactions.some((floating) => floating.id === messageId)
+        ? s.floatingReactions
+        : [...s.floatingReactions, { id: messageId, icon: reaction.icon, left: 8 + Math.random() * 84 }],
     }));
     setTimeout(() => {
-      set((s) => ({ floatingReactions: s.floatingReactions.filter((r) => r.id !== id) }));
-    }, 1800);
+      set((s) => ({ floatingReactions: s.floatingReactions.filter((r) => r.id !== messageId) }));
+    }, 6500);
   },
 }));

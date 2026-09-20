@@ -178,8 +178,10 @@ Suggested stores:
 Do not persist chat store to browser storage.
 
 The YouTube sidebar owns setup and room UI state in the content-script React
-tree. Its target tab ID is the only activation marker stored in
-`storage.session`; invite URLs, chat, playback state and credentials remain
+tree. Its target tab ID is stored in `storage.session` as an activation hint.
+While joined, a minimal `{roomId,selfUserId}` record keyed by YouTube tab ID is
+stored in `storage.local` so page and extension reloads can revalidate the
+membership. Invite URLs, chat, playback state and credentials remain
 transient.
 
 ## 12. Browser storage
@@ -187,7 +189,7 @@ transient.
 Allowed examples:
 
 - non-sensitive UI preferences,
-- active room ID if needed for recovery,
+- minimal active room identity (`roomId` and `selfUserId`) keyed by tab ID for recovery,
 - adapter preferences,
 - pending verification email and expiry only,
 - auth/session material only as required by Better Auth's safe integration design.

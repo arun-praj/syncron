@@ -43,6 +43,7 @@ export class PlaybackSocket {
   private initialSyncPending = false;
   private serverClockOffsetMs = 0;
   private hasServerClockOffset = false;
+  private hasAccurateServerClock = false;
   private readonly onVisible = () => {
     if (!document.hidden) this.catchUp();
   };
@@ -101,6 +102,9 @@ export class PlaybackSocket {
       this.sequence = 0;
       this.reconnectAttempt = 0;
       this.initialSyncPending = true;
+      this.serverClockOffsetMs = 0;
+      this.hasServerClockOffset = false;
+      this.hasAccurateServerClock = false;
       this.startPing();
       this.handlers.onOpen?.();
       this.enqueue("client.ping", { clientTime: Date.now() });
@@ -169,10 +173,11 @@ export class PlaybackSocket {
     const receivedAt = Date.now();
     const roundTrip = Math.max(0, receivedAt - clientTime);
     const sample = serverTime - (clientTime + roundTrip / 2);
-    this.serverClockOffsetMs = this.hasServerClockOffset
+    this.serverClockOffsetMs = this.hasAccurateServerClock
       ? this.serverClockOffsetMs * 0.8 + sample * 0.2
       : sample;
     this.hasServerClockOffset = true;
+    this.hasAccurateServerClock = true;
     if (this.initialSyncPending) {
       this.initialSyncPending = false;
       this.requestSync();

@@ -31,6 +31,7 @@ export interface OpenYoutubeSidebarMessage {
 export interface JoinedRoomMemberSeed {
   id: string;
   name: string;
+  username?: string;
   avatarId: string;
   isHost: boolean;
 }

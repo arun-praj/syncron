@@ -31,7 +31,6 @@ import { createApp } from "../apps/api/src/app.js";
 import { livekit } from "../apps/api/src/livekit.js";
 import {
   MemoryRoomCoordinator,
-  Coordinators,
   type Socket,
 } from "../apps/api/src/coordinator.js";
 import { Invites } from "../apps/api/src/invites.js";
@@ -585,6 +584,24 @@ test("coordinator handles permissions, sequence, seek coalescing, socket replace
   await coord.settings(false);
   await coord.receive(b, cb, event("playback.pause", playback));
   expect(y.events.at(-1)?.payload.code).toBe("PLAYBACK_CONTROL_FORBIDDEN");
+  await coord.settings(true);
+  await coord.receive(
+    b,
+    cb,
+    event("playback.audio_change", { position: 11, muted: true, volume: 0 }, 2),
+  );
+  expect(x.events.at(-1)?.type).toBe("playback.state");
+  expect(x.events.at(-1)?.payload).toMatchObject({ muted: true, volume: 0 });
+  await coord.receive(b, cb, event("playback.play", { ...playback, position: 11 }, 3));
+  expect(x.events.at(-1)?.payload.paused).toBe(false);
+  await coord.receive(b, cb, event("playback.rate_change", { position: 12, playbackRate: 1.25 }, 4));
+  expect(x.events.at(-1)?.payload.playbackRate).toBe(1.25);
+  await coord.receive(b, cb, event("playback.seek", { ...playback, position: 15 }, 5));
+  s.advance(51);
+  await coord.tick();
+  expect(x.events.at(-1)?.payload.position).toBe(15);
+  await coord.receive(b, cb, event("playback.pause", { ...playback, position: 15 }, 6));
+  expect(x.events.at(-1)?.payload.paused).toBe(true);
   await coord.receive(
     a,
     ca,
@@ -615,7 +632,7 @@ test("coordinator handles permissions, sequence, seek coalescing, socket replace
   s.advance(1001);
   await coord.tick();
   expect((await s.store.room(id)).hostUserId).toBe(b);
-  expect(await s.store.member(id, a)).toBeDefined();
+  expect(await s.store.member(id, a)).toBeUndefined();
   const sequences = y.events.map((e) => e.serverSequence);
   expect(sequences.every((v, i) => !i || v > sequences[i - 1]!)).toBe(true);
 });
@@ -674,32 +691,37 @@ test("capacity is 25 and concurrent coordinator joins cannot overbook", async ()
   expect((await s.store.member(id, host))!.id).toBe(first);
 });
 
-test("disconnects retain active memberships; restart loses playback without ending the room", async () => {
+test("disconnect grace closes memberships; reconnect within grace preserves them", async () => {
   const s = await setup();
-  const a = await s.seed();
+  const a = await s.seed("alice");
+  const b = await s.seed("bobby");
   const id = await s.store.create(a);
   const coord = new MemoryRoomCoordinator(id, s.store, s.media, s.now);
   await coord.recover();
   const x = socket();
   const cid = await coord.connect(a, x);
+  await coord.join(b);
+  const bSocket = socket();
+  const bConnection = await coord.connect(b, bSocket);
   await coord.receive(a, cid, event("playback.play", playback));
-  await coord.disconnect(a, cid);
-  s.advance(60000);
+  await coord.disconnect(b, bConnection);
+  s.advance(29999);
   await coord.tick();
-  expect(await s.store.member(id, a)).toBeDefined();
-  const y = socket();
-  await coord.connect(a, y);
-  expect(y.events.some((e) => e.type === "playback.state")).toBe(true);
-  const restart = new Coordinators(s.store, s.media, s.now);
-  await restart.recover();
-  const z = socket();
-  await restart.run(id, (c) => c.connect(a, z));
-  expect(z.events.some((e) => e.type === "playback.no_state")).toBe(true);
-  s.advance(600000);
-  await restart.tick();
-  expect((await s.store.room(id)).status).toBe("ACTIVE");
-  expect(await s.store.member(id, a)).toBeDefined();
-  await restart.run(id, (c) => c.join(a));
+  expect(await s.store.member(id, b)).toBeDefined();
+  const reconnected = socket();
+  const reconnectedId = await coord.connect(b, reconnected);
+  s.advance(60000);
+  await coord.receive(a, cid, event("client.ping", { clientTime: s.now() }, 2));
+  await coord.tick();
+  expect(await s.store.member(id, b)).toBeDefined();
+  await coord.disconnect(b, reconnectedId);
+  s.advance(29999);
+  await coord.receive(a, cid, event("client.ping", { clientTime: s.now() }, 3));
+  await coord.tick();
+  expect(await s.store.member(id, b)).toBeDefined();
+  s.advance(1);
+  await coord.tick();
+  expect(await s.store.member(id, b)).toBeUndefined();
 });
 
 test("controls enforce finite payload bounds, heartbeat and burst rate", async () => {
@@ -911,6 +933,71 @@ test("host transfer, explicit leave and cleanup retry preserve authoritative mem
   s.advance(5001);
   await coord.tick();
   expect(coord.disposable).toBe(true);
+});
+
+test("explicit host leave transfers to a connected member or ends an empty room", async () => {
+  const s = await setup();
+  const host = await s.seed("alice");
+  const member = await s.seed("bobby");
+  const id = await s.store.create(host);
+  const coord = new MemoryRoomCoordinator(id, s.store, s.media, s.now);
+  await coord.recover();
+  await coord.join(member);
+  await coord.connect(host, socket());
+  await coord.connect(member, socket());
+
+  await coord.leave(host);
+  expect((await s.store.room(id)).hostUserId).toBe(member);
+  expect(await s.store.member(id, host)).toBeUndefined();
+  await coord.leave(host);
+
+  const solo = await s.seed("solo");
+  const emptyId = await s.store.create(solo);
+  const empty = new MemoryRoomCoordinator(emptyId, s.store, s.media, s.now);
+  await empty.recover();
+  await empty.leave(solo);
+  expect((await s.store.room(emptyId)).status).toBe("ENDED");
+  expect(await s.store.active(emptyId)).toHaveLength(0);
+  await empty.leave(solo);
+});
+
+test("host can transfer ownership to the selected member before leaving", async () => {
+  const s = await setup();
+  const host = await s.seed("alice");
+  const selected = await s.seed("bobby");
+  const other = await s.seed("carol");
+  const id = await s.store.create(host);
+  const coord = new MemoryRoomCoordinator(id, s.store, s.media, s.now);
+  await coord.recover();
+  await coord.join(selected);
+  await coord.join(other);
+  await coord.connect(host, socket());
+  await coord.connect(selected, socket());
+  await coord.connect(other, socket());
+
+  await coord.leave(host, false, { transferTo: selected });
+
+  expect((await s.store.room(id)).hostUserId).toBe(selected);
+  expect((await coord.members()).find((member) => member.user.id === selected)?.role).toBe("HOST");
+  expect((await coord.members()).find((member) => member.user.id === other)?.role).toBe("MEMBER");
+  expect(await s.store.member(id, host)).toBeUndefined();
+});
+
+test("host disband marks the room ended and removes every member", async () => {
+  const s = await setup();
+  const host = await s.seed("alice");
+  const member = await s.seed("bobby");
+  const id = await s.store.create(host);
+  const coord = new MemoryRoomCoordinator(id, s.store, s.media, s.now);
+  await coord.recover();
+  await coord.join(member);
+  await coord.connect(host, socket());
+  await coord.connect(member, socket());
+
+  await coord.leave(host, false, { disband: true });
+
+  expect((await s.store.room(id)).status).toBe("ENDED");
+  expect(await s.store.active(id)).toHaveLength(0);
 });
 
 test("wrong-room invites, nonmember tokens, request validation and OTP send quota", async () => {

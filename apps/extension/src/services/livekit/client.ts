@@ -16,7 +16,13 @@ export interface LiveKitHandlers {
 }
 
 export class LiveKitSession {
-  private room: Room = new Room();
+  private room: Room = new Room({
+    audioCaptureDefaults: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
   constructor(private readonly handlers: LiveKitHandlers) {}
 
   get localIdentity(): string | null {

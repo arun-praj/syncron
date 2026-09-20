@@ -1,7 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RoomContext } from "@livekit/components-react";
 
-import { ChevronLeftIcon } from "@/components/icons";
 import { InviteHintOverlay } from "@/features/room/InviteHintOverlay";
 import {
   CameraMiniIcon,
@@ -10,12 +9,14 @@ import {
   LeaveIcon,
   MicMiniIcon,
   MicOffMiniIcon,
+  SettingsIcon,
 } from "@/features/room/icons";
 import { MemberGrid } from "@/features/room/MemberGrid";
 import "@/features/room/room.css";
 import { RoomChat } from "@/features/room/RoomChat";
 import { formatPlaybackTime } from "@/lib/format-time";
 import { useRoomStore } from "@/stores/room-store";
+import { formatMemberLabel } from "@/features/room/member-label";
 
 export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; onLeave: () => void }) {
   const identity = useRoomStore((s) => s.identity);
@@ -33,9 +34,17 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   const autoplayBlocked = useRoomStore((s) => s.autoplayBlocked);
   const navigationWarning = useRoomStore((s) => s.navigationWarning);
   const dismissNavigationWarning = useRoomStore((s) => s.dismissNavigationWarning);
+  const controlWarning = useRoomStore((s) => s.controlWarning);
+  const dismissControlWarning = useRoomStore((s) => s.dismissControlWarning);
   const forceLeaveReason = useRoomStore((s) => s.forceLeaveReason);
   const liveKit = useRoomStore((s) => s.liveKit);
   const liveKitReady = useRoomStore((s) => s.liveKitReady);
+  const members = useRoomStore((s) => s.members);
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+  const [disbandParty, setDisbandParty] = useState(false);
+  const [transferTo, setTransferTo] = useState("");
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [isLeaving, setIsLeaving] = useState(false);
 
   const inviteButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -51,6 +60,34 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   // never user-visible.
   if (!identity) return null;
 
+  const otherMembers = members.filter((member) => !member.isHost);
+  const hasOtherMembers = otherMembers.length > 0;
+  const autoTransferTarget = otherMembers.length === 1 ? otherMembers[0] : null;
+
+  const leave = async (options?: { disband?: boolean; transferTo?: string }) => {
+    setIsLeaving(true);
+    setLeaveError(null);
+    const left = await leaveRoom(options);
+    setIsLeaving(false);
+    if (!left) {
+      setLeaveError("Couldn’t update the party. Please try again.");
+      return;
+    }
+    setShowLeaveDialog(false);
+    onLeave();
+  };
+
+  const openLeaveDialog = () => {
+    if (!identity.isHost) {
+      void leave();
+      return;
+    }
+    setDisbandParty(!hasOtherMembers);
+    setTransferTo(autoTransferTarget?.id ?? otherMembers[0]?.id ?? "");
+    setLeaveError(null);
+    setShowLeaveDialog(true);
+  };
+
   const videoTitle = playbackState?.title ?? identity.tabTitle;
   const isPlaying = playbackState ? !playbackState.paused : false;
   const timeLabel = playbackState ? formatPlaybackTime(playbackState.position) : "--:--";
@@ -59,8 +96,13 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   return (
     <div className="room-screen">
       <div className="header">
-        <button type="button" onClick={onBack} aria-label="Open room settings" title="Room settings" className="back">
-          <ChevronLeftIcon />
+        <button
+          type="button"
+          onClick={identity.isHost ? onBack : openLeaveDialog}
+          aria-label={identity.isHost ? "Open room settings" : "Exit room"}
+          title={identity.isHost ? "Room settings" : "Exit room"}
+          className="back">
+          {identity.isHost ? <SettingsIcon /> : <LeaveIcon />}
         </button>
         <span className="title">Watch party</span>
         {canShowInvite && (
@@ -71,11 +113,8 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
         )}
         <button
           type="button"
-          onClick={() => {
-            leaveRoom();
-            onLeave();
-          }}
-          aria-label="Leave party"
+          onClick={openLeaveDialog}
+          aria-label={identity.isHost ? "Leave party" : "Exit room"}
           className="leave-btn">
           <LeaveIcon />
         </button>
@@ -132,6 +171,76 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
         <div className="sync-banner" role="alert">
           <span>{navigationWarning}</span>
           <button type="button" onClick={dismissNavigationWarning}>Dismiss</button>
+        </div>
+      )}
+
+      {controlWarning && (
+        <div className="sync-banner" role="alert">
+          <span>{controlWarning}</span>
+          {identity.isHost && (
+            <button type="button" onClick={dismissControlWarning}>Dismiss</button>
+          )}
+        </div>
+      )}
+
+      {showLeaveDialog && identity.isHost && (
+        <div className="room-dialog-backdrop" role="presentation">
+          <div className="room-dialog" role="dialog" aria-modal="true" aria-labelledby="leave-room-title">
+            <h2 id="leave-room-title">Leave watch party?</h2>
+            <p className="room-dialog-copy">
+              Choose what should happen to the party when you leave as host.
+            </p>
+            <label className="room-dialog-toggle-row">
+              <span>
+                <strong>Disband the party</strong>
+                <small>{hasOtherMembers ? "Everyone will be notified and removed." : "You are the only member."}</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={disbandParty}
+                disabled={!hasOtherMembers || isLeaving}
+                onChange={(event) => setDisbandParty(event.target.checked)}
+              />
+            </label>
+            {!disbandParty && hasOtherMembers && (
+              <div className="room-dialog-field">
+                {autoTransferTarget ? (
+                  <p className="room-dialog-transfer-note">
+                    Ownership will transfer automatically to {formatMemberLabel(autoTransferTarget, identity.selfUserId)}.
+                  </p>
+                ) : (
+                  <>
+                    <label htmlFor="room-transfer-target">Transfer host access to</label>
+                    <select
+                      id="room-transfer-target"
+                      value={transferTo}
+                      disabled={isLeaving}
+                      onChange={(event) => setTransferTo(event.target.value)}>
+                      <option value="">Select a member</option>
+                      {otherMembers.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {formatMemberLabel(member, identity.selfUserId)}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
+              </div>
+            )}
+            {leaveError && <p className="room-dialog-error" role="alert">{leaveError}</p>}
+            <div className="room-dialog-actions">
+              <button type="button" className="room-dialog-cancel" disabled={isLeaving} onClick={() => setShowLeaveDialog(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="room-dialog-confirm"
+                disabled={isLeaving || (!disbandParty && !transferTo)}
+                onClick={() => void leave({ disband: disbandParty, ...(disbandParty ? {} : { transferTo: autoTransferTarget?.id ?? transferTo }) })}>
+                {isLeaving ? "Leaving…" : disbandParty ? "Disband party" : "Transfer & leave"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

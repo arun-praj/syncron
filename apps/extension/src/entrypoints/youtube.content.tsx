@@ -1,6 +1,6 @@
 import { createRoot, type Root } from "react-dom/client";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { browser } from "wxt/browser";
+import { browser, type PublicPath } from "wxt/browser";
 
 import {
   isActivateYoutubeSidebarMessage,
@@ -8,7 +8,7 @@ import {
   type ActivateYoutubeSidebarMessage,
   type JoinedRoomSnapshot,
 } from "@/lib/extension-messages";
-import { readPagePlaybackSnapshot } from "@/lib/page-playback";
+import { readPagePlaybackSnapshot, resetPagePlaybackToStart } from "@/lib/page-playback";
 import { isPlaybackSnapshotRequest } from "@/lib/playback-messages";
 import { STREAMING_SERVICES } from "@/lib/streaming-services";
 import OnboardingScreen from "@/screens/OnboardingScreen";
@@ -103,7 +103,7 @@ function SidebarFrame({
     <>
       <aside
         aria-label="Syncron"
-        className={`fixed right-0 top-0 z-[2147483647] h-screen w-[380px] flex-col border-l border-border bg-bg font-sans shadow-2xl ${
+        className={`fixed right-0 top-0 z-[2147483640] h-screen w-[380px] flex-col border-l border-border bg-bg font-sans shadow-2xl ${
           open ? "flex" : "hidden"
         }`}>
         <div className="flex h-11 flex-shrink-0 items-center justify-between border-b border-border bg-white px-4">
@@ -123,11 +123,29 @@ function SidebarFrame({
           type="button"
           onClick={onOpen}
           aria-label="Open Syncron sidebar"
-          className="fixed right-3 top-1/2 z-[2147483647] -translate-y-1/2 rounded-full bg-gradient-to-b from-brand-top to-brand-bottom px-3 py-2 font-sans text-[12px] font-semibold text-white shadow-btn-primary">
+          className="fixed right-3 top-1/2 z-[2147483640] -translate-y-1/2 rounded-full bg-gradient-to-b from-brand-top to-brand-bottom px-3 py-2 font-sans text-[12px] font-semibold text-white shadow-btn-primary">
           Syncron
         </button>
       )}
     </>
+  );
+}
+
+function ReactionViewportOverlay() {
+  const floatingReactions = useRoomStore((s) => s.floatingReactions);
+
+  return (
+    <div className="reaction-viewport-overlay" aria-hidden="true">
+      {floatingReactions.map((reaction) => (
+        <img
+          key={reaction.id}
+          src={browser.runtime.getURL(reaction.icon as PublicPath)}
+          alt=""
+          className="viewport-reaction-float"
+          style={{ left: `${reaction.left}%` }}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -270,6 +288,7 @@ function SyncronSidebar({
         tabTitle={context.tabTitle}
         tabUrl={context.tabUrl}
         readPlaybackSnapshot={readSnapshot}
+        resetPlaybackToStart={resetPagePlaybackToStart}
         onBack={() => setOpen(false)}
         activeRoom={activeRoom}
         onReturnToRoom={() => setPage("room")}
@@ -382,5 +401,31 @@ export default defineContentScript({
       },
     });
     ui.mount();
+
+    const reactionUi = await createShadowRootUi(ctx, {
+      name: "syncron-reaction-overlay",
+      position: "modal",
+      zIndex: 2147483647,
+      onMount(container): Root {
+        const root = createRoot(container);
+        root.render(<ReactionViewportOverlay />);
+        return root;
+      },
+      onRemove(root) {
+        root?.unmount();
+      },
+    });
+    reactionUi.mount();
+    // The reaction host covers the viewport so floats can rise above YouTube,
+    // but the host itself must never become the mouse target.
+    reactionUi.shadowHost.style.pointerEvents = "none";
+
+    const restoreReactionHost = () => {
+      const host = reactionUi.shadowHost;
+      const parent = document.fullscreenElement ?? document.body;
+      if (parent && host.parentElement !== parent) parent.append(host);
+    };
+    ctx.addEventListener(document, "fullscreenchange", restoreReactionHost);
+    restoreReactionHost();
   },
 });

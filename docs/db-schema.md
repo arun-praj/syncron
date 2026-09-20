@@ -189,4 +189,4 @@ Account deletion behavior must be designed before production launch; implementat
 - D1 compatibility must be checked before merging migrations.
 - Tests must initialize a clean SQLite database from migrations.
 
-Active membership uniqueness is enforced by a partial unique index on (room_id,user_id) WHERE left_at IS NULL. Timestamps use epoch milliseconds in SQLite. Active memberships survive transient disconnects, extension/page reloads, and API restarts until explicit leave, kick, or room end; transient playback state may be lost on API restart. No invite tokens are stored.
+Active membership uniqueness is enforced by a partial unique index on (room_id,user_id) WHERE left_at IS NULL. Timestamps use epoch milliseconds in SQLite. Active memberships survive transient disconnects, extension/page reloads, and API restarts for a 30-second reconnect grace period; reconnecting within grace preserves the interval, otherwise it closes with `DISCONNECTED_TIMEOUT`. Explicit leave, kick, and room end close memberships immediately; transient playback state may be lost on API restart. No invite tokens are stored.

@@ -107,13 +107,18 @@ Do not assume the two are identical. UI may combine them into one participant st
 
 Coordinator tracks host connection state.
 
-On unexpected host control-channel disconnect:
+On unexpected member control-channel disconnect:
 
 - start 30-second grace timer,
-- if host reconnects, cancel timer,
-- otherwise select longest-connected active eligible participant,
-- persist new `host_user_id` and role changes,
-- broadcast `room.host_changed`.
+- if the member reconnects, cancel its timer and preserve its membership,
+- otherwise close its active membership with `DISCONNECTED_TIMEOUT`.
+
+For a disconnected host, after the grace timer expires select the earliest
+connected active member, persist new `host_user_id` and role changes, and
+broadcast `room.host_changed`. If no member is connected, end the room. An
+explicit host leave may either disband the room or transfer ownership to the
+selected connected member; with no explicit choice it transfers immediately to
+the earliest connected member or ends the room when none is connected.
 
 ## 10. Session termination
 

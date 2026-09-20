@@ -46,6 +46,10 @@ export const createRoom = z.strictObject({
 });
 export const joinRoom = z.strictObject({ invite: z.string().min(1).max(1024) });
 export const invitePreview = joinRoom;
+export const leaveRoom = z.strictObject({
+  disband: z.boolean().default(false),
+  transferTo: id.optional(),
+});
 export const settings = z.strictObject({ everyoneCanControl: z.boolean() });
 export const targetUser = z.strictObject({ userId: id });
 export const inviteClaims = z.strictObject({

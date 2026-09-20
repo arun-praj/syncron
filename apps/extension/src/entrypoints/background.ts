@@ -13,8 +13,9 @@ import {
 } from "@/lib/extension-messages";
 import {
   clearActiveYoutubeRoom,
+  closedYoutubeRoomTabIds,
   getActiveYoutubeRoom,
-  pruneClosedYoutubeRooms,
+  listActiveYoutubeRooms,
   setActiveYoutubeRoom,
 } from "@/lib/room-session";
 import { api, ApiError } from "@/services/api/client";
@@ -47,8 +48,24 @@ async function pendingJoins(): Promise<Record<number, JoinedRoomSnapshot>> {
   return (await storage.getItem<Record<number, JoinedRoomSnapshot>>(PENDING_JOINS_KEY)) ?? {};
 }
 
+async function pendingJoinTabIds(): Promise<number[]> {
+  return Object.keys(await pendingJoins())
+    .map(Number)
+    .filter((tabId) => Number.isInteger(tabId));
+}
+
 async function setPendingJoin(tabId: number, snapshot: JoinedRoomSnapshot): Promise<void> {
   await storage.setItem(PENDING_JOINS_KEY, { ...(await pendingJoins()), [tabId]: snapshot });
+}
+
+async function getPendingJoin(tabId: number): Promise<JoinedRoomSnapshot | undefined> {
+  return (await pendingJoins())[tabId];
+}
+
+async function clearPendingJoin(tabId: number): Promise<void> {
+  const pending = await pendingJoins();
+  const rest = Object.fromEntries(Object.entries(pending).filter(([id]) => Number(id) !== tabId));
+  await storage.setItem(PENDING_JOINS_KEY, rest);
 }
 
 // Consumes (removes) the pending join so it's only ever applied once, even
@@ -69,13 +86,18 @@ type ActiveRoomRefresh =
 
 async function refreshActiveRoom(record: { roomId: string; selfUserId: string }): Promise<ActiveRoomRefresh> {
   try {
-    const [{ room }, { members }] = await Promise.all([
+    const [{ room }, { members }, meResponse] = await Promise.all([
       api.getRoom(record.roomId),
       api.getRoomMembers(record.roomId),
+      api.me(),
     ]);
     if (room.status !== "ACTIVE") return { status: "inactive" };
 
-    const self = members.find((member) => member.user.id === record.selfUserId);
+    // The durable tab record is only a recovery hint. The authenticated
+    // account is authoritative; using the stored ID here can incorrectly
+    // restore a former user's host badge after an account switch.
+    const selfUserId = meResponse.user.id;
+    const self = members.find((member) => member.user.id === selfUserId);
     if (!self) return { status: "inactive" };
     const canShareInvite = self.role === "HOST" || room.allowMembersToShareInvite;
     const inviteUrl = canShareInvite
@@ -92,11 +114,12 @@ async function refreshActiveRoom(record: { roomId: string; selfUserId: string })
         inviteUrl,
         members: members.map((member) => ({
           id: member.user.id,
-          name: member.user.id === record.selfUserId ? "You" : member.user.displayName,
+          name: member.user.id === selfUserId ? "You" : member.user.displayName,
+          username: member.user.username,
           avatarId: member.user.avatarId ?? "1",
           isHost: member.role === "HOST",
         })),
-        selfUserId: record.selfUserId,
+        selfUserId,
       },
     };
   } catch (error) {
@@ -164,6 +187,31 @@ async function handlePreviewInvite(invite: string) {
   }
 }
 
+async function leaveRoomBestEffort(roomId: string): Promise<void> {
+  await api.leaveRoom(roomId).catch(() => undefined);
+}
+
+async function handleClosedTab(tabId: number): Promise<void> {
+  const [active, pending] = await Promise.all([getActiveYoutubeRoom(tabId), getPendingJoin(tabId)]);
+  const roomIds = [...new Set([active?.roomId, pending?.roomId].filter((id): id is string => !!id))];
+  await Promise.all(roomIds.map(leaveRoomBestEffort));
+  await Promise.all([clearTargetTab(tabId), clearActiveYoutubeRoom(tabId), clearPendingJoin(tabId)]);
+}
+
+async function leaveClosedRoomRecords(): Promise<void> {
+  const openTabs = new Set(
+    (await browser.tabs.query({})).flatMap((tab) => (tab.id === undefined ? [] : [tab.id])),
+  );
+  const [records, pendingTabIds] = await Promise.all([listActiveYoutubeRooms(), pendingJoinTabIds()]);
+  const staleTabIds = new Set(
+    closedYoutubeRoomTabIds(
+      [...new Set([...records.map(({ tabId }) => tabId), ...pendingTabIds])],
+      [...openTabs],
+    ),
+  );
+  await Promise.all([...staleTabIds].map((tabId) => handleClosedTab(tabId)));
+}
+
 // The invite page owns navigation. This worker only performs the authoritative
 // join and stores the snapshot before returning the validated destination.
 async function handleJoinInvite(
@@ -202,6 +250,7 @@ async function handleJoinInvite(
       members: membersResult.members.map((m) => ({
         id: m.user.id,
         name: m.user.id === me.user.id ? "You" : m.user.displayName,
+        username: m.user.username,
         avatarId: m.user.avatarId ?? "1",
         isHost: m.role === "HOST",
       })),
@@ -212,6 +261,12 @@ async function handleJoinInvite(
 
     await setTargetTab(tabId);
     await setPendingJoin(tabId, snapshot);
+    try {
+      await browser.tabs.get(tabId);
+    } catch {
+      await handleClosedTab(tabId);
+      return { ok: false, message: "The invite tab was closed before joining." };
+    }
     return { ok: true, destination: room.media.url };
   } catch (e) {
     return { ok: false, message: joinErrorMessage(e) };
@@ -252,7 +307,10 @@ export default defineBackground(() => {
 
         const recovery = await refreshActiveRoom(storedRoom);
         if (recovery.status === "active") {
-          await setActiveYoutubeRoom(tabId, storedRoom);
+          await setActiveYoutubeRoom(tabId, {
+            roomId: recovery.snapshot.roomId,
+            selfUserId: recovery.snapshot.selfUserId,
+          });
           return { type: ACTIVATE_YOUTUBE_SIDEBAR, tabId, joinedRoom: recovery.snapshot };
         }
         if (recovery.status === "reconnecting") {
@@ -287,14 +345,12 @@ export default defineBackground(() => {
   });
 
   browser.tabs.onRemoved.addListener((tabId) => {
-    void clearTargetTab(tabId);
-    void clearActiveYoutubeRoom(tabId);
+    void handleClosedTab(tabId);
   });
 
-  void browser.tabs
-    .query({})
-    .then((tabs) => pruneClosedYoutubeRooms(tabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id]))))
-    .catch(() => undefined);
+  browser.runtime.onStartup.addListener(() => {
+    void leaveClosedRoomRecords().catch(() => undefined);
+  });
 
   browser.runtime.onInstalled.addListener(() => {
     console.log("[Syncron] background service worker ready");

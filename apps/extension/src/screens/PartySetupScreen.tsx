@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { browser, type PublicPath } from "wxt/browser";
 
 import { isRateLimited } from "@/auth-flow";
@@ -46,6 +46,7 @@ export default function PartySetupScreen({
   onReturnToRoom,
   activeRoom,
   readPlaybackSnapshot,
+  resetPlaybackToStart,
 }: {
   service: StreamingService;
   tabId: number;
@@ -56,6 +57,7 @@ export default function PartySetupScreen({
   onReturnToRoom?: () => void;
   activeRoom?: boolean;
   readPlaybackSnapshot?: () => Promise<PlaybackSnapshot | null>;
+  resetPlaybackToStart?: () => void;
 }) {
   const liveSnapshot = usePlaybackSnapshot(
     service.id === "YOUTUBE" ? tabId : null,
@@ -68,11 +70,34 @@ export default function PartySetupScreen({
 
   const selfUser = useAuthStore((s) => s.user);
   const enterRoom = useRoomStore((s) => s.enterRoom);
+  const roomIdentity = useRoomStore((s) => s.identity);
 
   const [allowControl, setAllowControl] = useState(false);
   const [allowShare, setAllowShare] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeRoom && roomIdentity) setAllowControl(roomIdentity.everyoneCanControl);
+  }, [activeRoom, roomIdentity?.roomId, roomIdentity?.everyoneCanControl]);
+
+  const changeRoomControl = async (next: boolean) => {
+    if (!activeRoom || !roomIdentity?.isHost || isSavingSettings) return;
+    const previous = allowControl;
+    setAllowControl(next);
+    setIsSavingSettings(true);
+    setError(null);
+    try {
+      const response = await api.updateRoomSettings(roomIdentity.roomId, { everyoneCanControl: next });
+      setAllowControl(response.room.everyoneCanControl);
+    } catch {
+      setAllowControl(previous);
+      setError("Couldn’t update party permissions. Please try again.");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
 
   const startParty = async () => {
     if (!canStartParty) return;
@@ -80,6 +105,7 @@ export default function PartySetupScreen({
     setError(null);
     try {
       const playback = await readPlaybackSnapshot?.();
+      resetPlaybackToStart?.();
       const { room, inviteUrl } = await api.createRoom({
         name: tabTitle.slice(0, 100),
         everyoneCanControl: allowControl,
@@ -88,9 +114,9 @@ export default function PartySetupScreen({
         ...(playback
           ? {
               initialPlayback: {
-                position: playback.currentTime,
-                paused: playback.paused,
-                playbackRate: playback.playbackRate,
+                position: 0,
+                paused: true,
+                playbackRate: 1,
                 muted: playback.muted,
                 volume: playback.volume,
               },
@@ -156,14 +182,18 @@ export default function PartySetupScreen({
             role="switch"
             aria-checked={allowControl}
             aria-label="Let members control playback"
-            onClick={() => setAllowControl((v) => !v)}
+            disabled={isSavingSettings || (activeRoom && !roomIdentity?.isHost)}
+            onClick={() => {
+              if (activeRoom) void changeRoomControl(!allowControl);
+              else setAllowControl((v) => !v);
+            }}
             className="ps-toggle"
             style={{ background: allowControl ? "#2563eb" : "#d4d4d8" }}>
             <span className="ps-toggle-knob" style={{ left: allowControl ? "18px" : "2px" }} />
           </button>
         </div>
 
-        <div className="ps-permission-card">
+        {!activeRoom && <div className="ps-permission-card">
           <div className="ps-permission-icon">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
               <path
@@ -196,7 +226,7 @@ export default function PartySetupScreen({
             style={{ background: allowShare ? "#2563eb" : "#d4d4d8" }}>
             <span className="ps-toggle-knob" style={{ left: allowShare ? "18px" : "2px" }} />
           </button>
-        </div>
+        </div>}
 
         {error && <p className="ps-error">{error}</p>}
 

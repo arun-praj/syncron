@@ -9,6 +9,7 @@ export interface SyncedPlaybackState {
   muted: boolean;
   volume: number;
   updatedAt: number;
+  updatedBy: string;
 }
 
 export interface PlaybackSyncHandlers {
@@ -16,6 +17,9 @@ export interface PlaybackSyncHandlers {
   onConnectionChange: (connected: boolean) => void;
   onAutoplayBlocked?: (blocked: boolean) => void;
   onNavigationBlocked?: () => void;
+  onControlBlocked?: () => void;
+  onPlaybackTransition?: (paused: boolean, updatedBy: string) => void;
+  onPlaybackSeek?: (position: number, updatedBy: string) => void;
   // room.member_joined/left/host_changed/kicked/ended/settings_changed etc.
   // — everything except the playback.state/no_state this controller
   // already applies itself. The caller (room-store) reacts to these.
@@ -34,6 +38,7 @@ export class PlaybackSyncController {
   private lastAppliedSequence = -1;
   private authoritativeStateReady = false;
   private authoritativeState: SyncedPlaybackState | null = null;
+  private authoritativeMediaKey: string | null = null;
   private hostSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -50,20 +55,24 @@ export class PlaybackSyncController {
         this.lastAppliedSequence = -1;
         this.authoritativeStateReady = false;
         this.authoritativeState = null;
+        this.authoritativeMediaKey = null;
         this.handlers.onConnectionChange(true);
       },
       onClose: () => {
         this.authoritativeStateReady = false;
         this.authoritativeState = null;
+        this.authoritativeMediaKey = null;
         this.handlers.onConnectionChange(false);
       },
     });
+    this.adapter.setAutoplayAllowed(isHost);
   }
 
   start(): void {
     this.lastAppliedSequence = -1;
     this.authoritativeStateReady = false;
     this.authoritativeState = null;
+    this.authoritativeMediaKey = null;
     this.adapter.start();
     this.adapter.lockToCurrentMedia();
     this.unsubscribeAdapter = this.adapter.subscribe((event) => this.handleLocalEvent(event));
@@ -107,11 +116,12 @@ export class PlaybackSyncController {
     // it anyway (that's the real enforcement), but there's no point
     // sending events that can only ever be rejected.
     if (!this.canControl) {
+      this.handlers.onControlBlocked?.();
       if (this.authoritativeState) {
         this.adapter.applyRemote({
           ...this.authoritativeState,
           serverNow: this.socket.serverNow(),
-        });
+        }, true);
       }
       return;
     }
@@ -169,36 +179,57 @@ export class PlaybackSyncController {
     if (event.type === "playback.state") {
       const { payload } = event;
       this.authoritativeStateReady = true;
+      const isNewState = payload.stateSequence > this.lastAppliedSequence;
+      const previousState = this.authoritativeState;
+      const mediaKey = `${payload.provider}:${payload.mediaId ?? ""}:${payload.url}`;
+      const sameMedia = this.authoritativeMediaKey === mediaKey;
+      const isSeek = isNewState && sameMedia && previousState !== null
+        && previousState.paused === payload.paused
+        && Math.abs(previousState.position - payload.position) > 0.25;
+      const localHostRate = this.isHost && this.lastAppliedSequence === -1
+        ? this.adapter.getSnapshot()?.playbackRate
+        : undefined;
+      const playbackRate = localHostRate ?? payload.playbackRate;
       if (payload.stateSequence >= this.lastAppliedSequence) {
         this.lastAppliedSequence = payload.stateSequence;
         this.authoritativeState = {
           title: payload.metadata?.title,
           paused: payload.paused,
           position: payload.position,
-          playbackRate: payload.playbackRate,
+          playbackRate,
           muted: payload.muted,
           volume: payload.volume,
           updatedAt: payload.updatedAt,
+          updatedBy: payload.updatedBy,
         };
+        this.authoritativeMediaKey = mediaKey;
         this.adapter.lockToMedia(payload.mediaId, payload.url);
         this.adapter.applyRemote({
           position: payload.position,
           paused: payload.paused,
-          playbackRate: payload.playbackRate,
+          playbackRate,
           muted: payload.muted,
           volume: payload.volume,
           updatedAt: payload.updatedAt,
           serverNow: this.socket.serverNow(),
         });
+        if (localHostRate !== undefined && localHostRate !== payload.playbackRate) {
+          this.socket.rateChange({ position: payload.position, playbackRate: localHostRate });
+        }
+        if (isNewState && previousState && previousState.paused !== payload.paused) {
+          this.handlers.onPlaybackTransition?.(payload.paused, payload.updatedBy);
+        }
+        if (isSeek) this.handlers.onPlaybackSeek?.(payload.position, payload.updatedBy);
       }
       this.handlers.onPlaybackState({
         title: payload.metadata?.title,
         paused: payload.paused,
         position: payload.position,
-        playbackRate: payload.playbackRate,
+        playbackRate,
         muted: payload.muted,
         volume: payload.volume,
         updatedAt: payload.updatedAt,
+        updatedBy: payload.updatedBy,
       });
       return;
     }
@@ -206,12 +237,16 @@ export class PlaybackSyncController {
       this.lastAppliedSequence = -1;
       this.authoritativeStateReady = true;
       this.authoritativeState = null;
+      this.authoritativeMediaKey = null;
       this.handlers.onPlaybackState(null);
       this.publishHostSnapshot();
       return;
     }
     if (event.type === "playback.control_rejected") {
-      if (event.payload.code === "PLAYBACK_CONTROL_FORBIDDEN") this.socket.requestSync();
+      if (event.payload.code === "PLAYBACK_CONTROL_FORBIDDEN") {
+        this.handlers.onControlBlocked?.();
+        this.socket.requestSync();
+      }
       return;
     }
     if (event.type === "room.settings_changed") {
@@ -219,6 +254,7 @@ export class PlaybackSyncController {
     }
     if (event.type === "room.host_changed") {
       this.isHost = event.payload.host.id === this.selfUserId;
+      this.adapter.setAutoplayAllowed(this.isHost);
     }
     this.handlers.onRoomEvent(event);
   }

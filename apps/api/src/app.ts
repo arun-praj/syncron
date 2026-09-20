@@ -340,26 +340,35 @@ export async function createApp(deps: {
   for (const action of ["leave", "end", "kick", "transfer-host"] as const)
     app.post(`/api/v1/rooms/:roomId/${action}`, async (c) => {
       const raw = await c.req.json();
+      const leaveOptions = action === "leave" ? protocol.leaveRoom.parse(raw) : undefined;
       const target =
         action === "kick" || action === "transfer-host"
           ? protocol.targetUser.parse(raw).userId
           : undefined;
-      if (!target) protocol.empty.parse(raw);
+      if (!target && action !== "leave") protocol.empty.parse(raw);
       const uid = c.get("userId");
       if (action !== "leave") limited(`host:${uid}`, 30, 60000);
       const id = c.req.param("roomId")!;
-      await coordinators.run(id, async (coord) => {
-        await coord.authorize(uid, action !== "leave");
-        if (action === "end") await coord.end("HOST_ENDED");
-        else if (action === "transfer-host") await coord.transfer(target!);
-        else {
-          if (action === "kick" && target === uid)
-            throw new DomainError("CANNOT_KICK_SELF");
-          if (target && !(await store.member(id, target)))
-            throw new DomainError("TARGET_NOT_IN_ROOM", 409);
-          await coord.leave(target ?? uid, action === "kick");
-        }
-      });
+      try {
+        await coordinators.run(id, async (coord) => {
+          if (action === "leave") {
+            await coord.leave(uid, false, leaveOptions);
+            return;
+          }
+          await coord.authorize(uid, true);
+          if (action === "end") await coord.end("HOST_ENDED");
+          else if (action === "transfer-host") await coord.transfer(target!);
+          else {
+            if (target === uid) throw new DomainError("CANNOT_KICK_SELF");
+            if (!(await store.member(id, target!)))
+              throw new DomainError("TARGET_NOT_IN_ROOM", 409);
+            await coord.leave(target!, true);
+          }
+        });
+      } catch (error) {
+        if (action !== "leave" || !(error instanceof DomainError) || error.code !== "ROOM_ENDED")
+          throw error;
+      }
       return action === "transfer-host"
         ? c.json({ host: await store.publicUser(target!) })
         : c.body(null, 204);

@@ -19,7 +19,7 @@ Better Auth is mounted at /api/auth/*. Its authenticated `POST /api/auth/change-
 | POST /rooms/:roomId/invite/rotate | {} | {inviteUrl} | active host |
 | POST /rooms/join | {invite} | {room,membership} | authenticated |
 | POST /rooms/:roomId/join | {invite} | {room,membership} | authenticated; matching room |
-| POST /rooms/:roomId/leave | {} | 204 | active member |
+| POST /rooms/:roomId/leave | `{disband?,transferTo?}` | 204 | active member; host may disband or transfer host access before leaving; repeated leave is safe |
 | POST /rooms/:roomId/end | {} | 204 | active host |
 | PATCH /rooms/:roomId/settings | {everyoneCanControl:boolean} | {room} | active host |
 | GET /rooms/:roomId/members | — | {members} | active member |
@@ -35,7 +35,7 @@ Room: id, name, status, everyoneCanControl, allowMembersToShareInvite, maxPartic
 
 Invites are HMAC-SHA256 signed roomId/inviteVersion claims, in APP_URL/join#invite=<token>. No codes, access modes or passwords. The preview validates the signed invite, room status, onboarding and current media without creating membership. Initial join requires an invite; existing active memberships reconnect using tickets without an invite. Rotation increments persisted version and revokes old invites. Invite tokens are never persisted or logged.
 
-Errors use {error:{code,message,requestId,details:null}}: 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 FORBIDDEN, INVITE_INVALID, NOT_ROOM_MEMBER, NOT_ROOM_HOST, CANNOT_KICK_SELF; 404 ROOM_NOT_FOUND, USER_NOT_FOUND; 409 ONBOARDING_REQUIRED, ROOM_ENDED, ROOM_FULL, TARGET_NOT_IN_ROOM, INVALID_HOST_TRANSFER; 429 RATE_LIMITED; 503 LIVEKIT_TOKEN_UNAVAILABLE, LIVEKIT_MODERATION_PENDING; 500 INTERNAL_ERROR.
+Errors use {error:{code,message,requestId,details:null}}: 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 FORBIDDEN, INVITE_INVALID, NOT_ROOM_MEMBER, NOT_ROOM_HOST, CANNOT_KICK_SELF, CANNOT_TRANSFER_TO_SELF; 404 ROOM_NOT_FOUND, USER_NOT_FOUND; 409 ONBOARDING_REQUIRED, ROOM_ENDED, ROOM_FULL, TARGET_NOT_IN_ROOM, INVALID_HOST_TRANSFER; 429 RATE_LIMITED; 503 LIVEKIT_TOKEN_UNAVAILABLE, LIVEKIT_MODERATION_PENDING; 500 INTERNAL_ERROR.
 
 GET /healthz returns {status:'ok'} after a database probe. GET /readyz also checks LiveKit and SMTP; returns 503 on failure.
 
@@ -312,6 +312,6 @@ Sent to target before disconnect when possible.
 
 Client sequence is strictly increasing per socket; stale values produce STALE_SEQUENCE. All events require active membership. Controls require host or everyoneCanControl. Invalid payloads produce protocol.error VALIDATION_ERROR; controls over 30/sec sustained, burst 60 produce RATE_LIMITED. Send client.ping at least every 15 seconds; 30 seconds without an event closes the socket. Replacing a socket cannot disconnect its replacement. Seek broadcasts are coalesced to the latest accepted state over 50ms; another control flushes the pending seek first. Initial connection automatically receives state/no_state. Playback positions must be finite and nonnegative, rates 0.25–4, volumes 0–1, http(s) URLs at most 2048 characters, titles at most 200. Buffering is informational and returns playback.buffering with userId, buffering and position. Rate and audio changes before initial media produce NO_PLAYBACK_STATE. A host receiving playback.no_state after a coordinator restart republishes its current full playback snapshot; members wait for that state.
 
-Disconnected members retain their active membership and reserve capacity until they explicitly leave, are kicked, or the room ends. Playback and presence remain transient; a server restart may lose playback state, but it does not end the persisted active room. Earliest connected participant (user ID tie-break) succeeds a host absent for 30 seconds. Explicit host leave transfers immediately when possible. Ending closes memberships with ROOM_ENDED and destroys transient state.
+Disconnected members retain their active membership and reserve capacity for a 30-second reconnect grace period. Reconnecting within that grace reuses the active membership; otherwise it closes with `DISCONNECTED_TIMEOUT`. Playback and presence remain transient; a server restart may lose playback state, but it does not end the persisted active room. After a disconnected host's grace expires, the earliest connected participant (user ID tie-break) becomes host; if none is connected, the room ends. Explicit host leave transfers immediately to the earliest connected member, or ends the room when none is connected. Repeated leave requests are safe. Ending closes memberships with `ROOM_ENDED` and destroys transient state.
 
 LiveKit tokens expire in 600 seconds; roomName=sync_<roomId>, identity=Better Auth user ID. Grants: join, subscribe, data, camera and microphone publishing. Kick removes the participant; end deletes the LiveKit room. Chat travels only through LiveKit.

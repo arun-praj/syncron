@@ -7,6 +7,7 @@ import {
   inviteResponse,
   joinRoom as joinRoomRequest,
   joinRoomResponse,
+  leaveRoom as leaveRoomRequest,
 
 
   livekitResponse,
@@ -16,6 +17,7 @@ import {
   onboardingResponse,
   profileUpdate as profileUpdateRequest,
   roomResponse,
+  settings as roomSettingsRequest,
   ticketResponse,
 } from "@syncron/protocol";
 import { z } from "zod";
@@ -112,13 +114,19 @@ export const api = {
   getRoom: (roomId: string) =>
     request(`/api/v1/rooms/${roomId}`, roomResponse, { method: "GET" }),
 
+  updateRoomSettings: (roomId: string, input: z.infer<typeof roomSettingsRequest>) =>
+    request(`/api/v1/rooms/${roomId}/settings`, roomResponse, {
+      method: "PATCH",
+      body: JSON.stringify(roomSettingsRequest.parse(input)),
+    }),
+
   getInvite: (roomId: string) =>
     request(`/api/v1/rooms/${roomId}/invite`, inviteResponse, { method: "GET" }),
 
-  leaveRoom: (roomId: string) =>
+  leaveRoom: (roomId: string, input: z.input<typeof leaveRoomRequest> = {}) =>
     request(`/api/v1/rooms/${roomId}/leave`, z.void(), {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify(leaveRoomRequest.parse(input)),
     }),
 
   endRoom: (roomId: string) =>

@@ -9,8 +9,13 @@ import {
   isSyncronPingMessage,
   isYoutubeContentReadyMessage,
 } from "../apps/extension/src/lib/extension-messages.js";
+import { closedYoutubeRoomTabIds } from "../apps/extension/src/lib/room-session.js";
 
 describe("extension sidebar messages", () => {
+  it("finds durable room records whose tabs are closed", () => {
+    expect(closedYoutubeRoomTabIds([4, 9], [9, 12])).toEqual([4]);
+  });
+
   it("accepts only complete tab activation messages", () => {
     expect(isActivateYoutubeSidebarMessage({ type: "syncron:activate-youtube-sidebar", tabId: 12 })).toBe(true);
     expect(isActivateYoutubeSidebarMessage({ type: "syncron:activate-youtube-sidebar", tabId: "12" })).toBe(false);

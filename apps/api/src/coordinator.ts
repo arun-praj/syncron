@@ -46,11 +46,11 @@ export interface RoomCoordinator {
   connect(userId: string, socket: Socket): Promise<string>;
   disconnect(userId: string, connectionId: string): Promise<void>;
   receive(userId: string, connectionId: string, input: unknown): Promise<void>;
-  leave(userId: string, kicked?: boolean): Promise<void>;
+  leave(userId: string, kicked?: boolean, options?: { disband?: boolean; transferTo?: string }): Promise<void>;
   transfer(userId: string): Promise<void>;
   settings(value: boolean): Promise<void>;
   members(): Promise<unknown[]>;
-  end(reason: string): Promise<void>;
+  end(reason: "HOST_ENDED" | "EMPTY_TIMEOUT"): Promise<void>;
   setMicrophoneAllowed(userId: string, allowed: boolean): Promise<void>;
   tick(): Promise<void>;
 }
@@ -59,7 +59,6 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
   private state: PlaybackState | null = null;
   private serverSequence = 0;
   private stateSequence = 0;
-  private hostAbsentSince: number | null;
   private pendingSeek = false;
   private seekDue = 0;
   private ended = false;
@@ -73,7 +72,6 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
     private media: MediaService,
     private now = () => Date.now(),
   ) {
-    this.hostAbsentSince = now();
     this.limiter = new MemoryRateLimiter(now);
   }
   async recover() {
@@ -198,8 +196,6 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       sequence: -1,
     });
     previous?.socket?.close(4001, "Connection replaced");
-    if ((await this.store.room(this.id)).hostUserId === userId)
-      this.hostAbsentSince = null;
     this.send(
       "connection.ready",
       { connectionId, roomId: this.id, userId, serverTime: now },
@@ -215,8 +211,6 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
     if (!p || p.connectionId !== connectionId || !p.socket) return;
     p.socket = undefined;
     p.disconnectedAt = this.now();
-    if ((await this.store.room(this.id)).hostUserId === userId)
-      this.hostAbsentSince = this.now();
   }
   private connected() {
     return [...this.presence.entries()]
@@ -244,14 +238,25 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
     )
       throw new DomainError("INVALID_HOST_TRANSFER", 409);
     await this.store.host(this.id, userId);
-    this.hostAbsentSince = null;
     this.send("room.host_changed", {
       host: await this.store.publicUser(userId),
     });
   }
-  async leave(userId: string, kicked = false) {
+  async leave(userId: string, kicked = false, options: { disband?: boolean; transferTo?: string } = {}) {
+    if (!(await this.store.member(this.id, userId))) return;
     await this.authorize(userId);
     const r = await this.store.room(this.id);
+    const wasHost = r.hostUserId === userId;
+    if (!kicked && (options.disband || options.transferTo) && r.hostUserId !== userId)
+      throw new DomainError("NOT_ROOM_HOST");
+    if (!kicked && options.disband) {
+      await this.end("HOST_ENDED");
+      return;
+    }
+    if (!kicked && r.hostUserId === userId && options.transferTo) {
+      if (options.transferTo === userId) throw new DomainError("CANNOT_TRANSFER_TO_SELF");
+      await this.transfer(options.transferTo);
+    }
     const p = this.presence.get(userId);
     await this.store.close(this.id, userId, kicked ? "KICKED" : "LEFT");
     if (kicked && p?.socket)
@@ -262,10 +267,10 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       userId,
       reason: kicked ? "KICKED" : "LEFT",
     });
-    if (r.hostUserId === userId) {
-      this.hostAbsentSince = this.now() - 30000;
+    if (wasHost && !options.transferTo) {
       const next = this.connected()[0];
       if (next) await this.transfer(next[0]);
+      else await this.end("EMPTY_TIMEOUT");
     }
     await this.removeMedia(userId);
   }
@@ -411,11 +416,21 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
         p.socket.close(4000, "Heartbeat timeout");
         await this.disconnect(u, p.connectionId!);
       }
-    if (this.pendingSeek && now >= this.seekDue) this.flush();
-    if (this.hostAbsentSince !== null && now - this.hostAbsentSince >= 30000) {
-      const next = this.connected()[0];
-      if (next) await this.transfer(next[0]);
+    for (const [userId, p] of [...this.presence]) {
+      if (p.socket || p.disconnectedAt === undefined || now - p.disconnectedAt < 30000) continue;
+      const room = await this.store.room(this.id);
+      const wasHost = room.hostUserId === userId;
+      await this.store.close(this.id, userId, "DISCONNECTED_TIMEOUT");
+      this.presence.delete(userId);
+      this.send("room.member_left", { userId, reason: "DISCONNECTED_TIMEOUT" });
+      await this.removeMedia(userId);
+      if (wasHost) {
+        const next = this.connected()[0];
+        if (next) await this.transfer(next[0]);
+        else await this.end("EMPTY_TIMEOUT");
+      }
     }
+    if (this.pendingSeek && now >= this.seekDue) this.flush();
   }
   private async removeMedia(userId: string) {
     this.cleanupPending.add(userId);
@@ -443,7 +458,7 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
   get disposable() {
     return this.ended && !this.endCleanupPending;
   }
-  async end(reason: string) {
+  async end(reason: "HOST_ENDED" | "EMPTY_TIMEOUT") {
     if (this.ended) return;
     await this.store.end(this.id);
     this.ended = true;

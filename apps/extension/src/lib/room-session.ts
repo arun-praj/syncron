@@ -33,16 +33,26 @@ export function clearActiveYoutubeRoom(tabId: number): Promise<void> {
   return storage.removeItem(activeRoomKey(tabId));
 }
 
-export async function pruneClosedYoutubeRooms(openTabIds: readonly number[]): Promise<void> {
+export function closedYoutubeRoomTabIds(
+  roomTabIds: readonly number[],
+  openTabIds: readonly number[],
+): number[] {
   const openTabs = new Set(openTabIds);
-  const localStorage = await storage.snapshot("local");
-  const staleKeys = Object.keys(localStorage).filter((key) => {
-    if (!key.startsWith(ACTIVE_ROOM_KEY_PREFIX)) return false;
-    const tabId = Number(key.slice(ACTIVE_ROOM_KEY_PREFIX.length));
-    return !Number.isInteger(tabId) || !openTabs.has(tabId);
-  });
+  return roomTabIds.filter((tabId) => !openTabs.has(tabId));
+}
 
-  if (staleKeys.length > 0) {
-    await storage.removeItems(staleKeys.map((key) => `local:${key}` as `local:${string}`));
-  }
+export async function listActiveYoutubeRooms(): Promise<
+  Array<{ tabId: number; record: ActiveYoutubeRoomRecord }>
+> {
+  const localStorage = await storage.snapshot("local");
+  const entries = await Promise.all(
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith(ACTIVE_ROOM_KEY_PREFIX))
+      .map(async (key) => {
+        const tabId = Number(key.slice(ACTIVE_ROOM_KEY_PREFIX.length));
+        const record = Number.isInteger(tabId) ? await getActiveYoutubeRoom(tabId) : null;
+        return record ? { tabId, record } : null;
+      }),
+  );
+  return entries.filter((entry): entry is { tabId: number; record: ActiveYoutubeRoomRecord } => entry !== null);
 }

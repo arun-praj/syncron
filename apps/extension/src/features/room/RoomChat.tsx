@@ -4,7 +4,9 @@ import { browser, type PublicPath } from "wxt/browser";
 
 import { AvatarGlyph } from "@/components/AvatarGlyph";
 import { SendIcon, SmileIcon } from "@/features/room/icons";
-import { ROOM_REACTIONS, useRoomStore } from "@/stores/room-store";
+import { formatMemberLabel } from "@/features/room/member-label";
+import { decodeReaction, encodeReaction, ROOM_REACTIONS } from "@/features/room/reactions";
+import { useRoomStore } from "@/stores/room-store";
 
 function reactionIconSrc(icon: string): string {
   return browser.runtime.getURL(icon as PublicPath);
@@ -25,29 +27,45 @@ export function RoomChat() {
   const showReactionPicker = useRoomStore((s) => s.showReactionPicker);
   const toggleReactionPicker = useRoomStore((s) => s.toggleReactionPicker);
   const sendReaction = useRoomStore((s) => s.sendReaction);
-  const floatingReactions = useRoomStore((s) => s.floatingReactions);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const reactionPickerRef = useRef<HTMLDivElement>(null);
+  const reactionToggleRef = useRef<HTMLButtonElement>(null);
   const chatOptions = useMemo(() => ({ room, channelTopic: "syncron.chat" }), [room]);
   const { chatMessages, isSending, send } = useChat(chatOptions);
   const systemMessages = useMemo(() => allMessages.filter((message) => message.kind === "system"), [allMessages]);
+
+  const seenReactionIds = useRef(new Set<string>());
+  useEffect(() => {
+    for (const message of chatMessages) {
+      const reaction = decodeReaction(message.message);
+      if (!reaction || seenReactionIds.current.has(message.id)) continue;
+      seenReactionIds.current.add(message.id);
+      sendReaction(reaction, message.id);
+    }
+  }, [chatMessages, sendReaction]);
 
   const messages = useMemo(
     () => [
       ...systemMessages.map((message) => ({
         ...message,
+        isSelf: false,
         timestamp: Number(message.id.slice(7).split("-")[0]) || 0,
       })),
-      ...chatMessages.map((message) => {
+      ...chatMessages.filter((message) => !decodeReaction(message.message)).map((message) => {
         const senderId = message.from?.identity;
         const sender = members.find((member) => member.id === senderId);
         return {
           id: message.id,
           kind: "chat" as const,
-          authorName: senderId === selfUserId ? "You" : (sender?.name ?? "Someone"),
+          authorName: formatMemberLabel(
+            sender ?? (senderId !== undefined && senderId === selfUserId ? { id: senderId, name: "" } : null),
+            selfUserId,
+          ),
           avatarId: sender?.avatarId ?? "1",
           time: formatChatTime(message.timestamp),
           text: message.message,
           timestamp: message.timestamp,
+          isSelf: senderId === selfUserId,
         };
       }),
     ].sort((a, b) => a.timestamp - b.timestamp),
@@ -57,6 +75,20 @@ export function RoomChat() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages.length]);
+
+  useEffect(() => {
+    if (!showReactionPicker) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const path = event.composedPath();
+      if (reactionPickerRef.current && path.includes(reactionPickerRef.current)) return;
+      if (reactionToggleRef.current && path.includes(reactionToggleRef.current)) return;
+      toggleReactionPicker();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [showReactionPicker, toggleReactionPicker]);
 
   const sendMessage = async () => {
     const text = draft.trim();
@@ -72,16 +104,6 @@ export function RoomChat() {
 
   return (
     <div className="chat-area">
-      {floatingReactions.map((reaction) => (
-        <img
-          key={reaction.id}
-          src={reactionIconSrc(reaction.icon)}
-          alt=""
-          className="float-reaction"
-          style={{ left: `${reaction.left}%` }}
-        />
-      ))}
-
       <div ref={scrollRef} className="chat-scroll">
         {messages.map((message) =>
           message.kind === "system" ? (
@@ -91,7 +113,7 @@ export function RoomChat() {
               <span className="system-dot" />
             </div>
           ) : (
-            <div key={message.id} className="chat-msg">
+            <div key={message.id} className={`chat-msg${message.isSelf ? " chat-msg-self" : ""}`}>
               {message.avatarId && <AvatarGlyph avatarId={message.avatarId} className="chat-avatar" />}
               <div className="chat-body">
                 <div className="chat-meta">
@@ -113,12 +135,16 @@ export function RoomChat() {
 
       <div className="composer">
         {showReactionPicker && (
-          <div className="reaction-picker">
+          <div ref={reactionPickerRef} className="reaction-picker">
             {ROOM_REACTIONS.map((reaction) => (
               <button
                 key={reaction.id}
                 type="button"
-                onClick={() => sendReaction(reaction)}
+                onClick={() => {
+                  void send(encodeReaction(reaction))
+                    .then((message) => sendReaction(reaction, message.id))
+                    .catch((error) => console.error("[Syncron] LiveKit reaction send failed", error));
+                }}
                 aria-label={reaction.label}
                 title={reaction.label}>
                 <img src={reactionIconSrc(reaction.icon)} alt="" />
@@ -126,7 +152,13 @@ export function RoomChat() {
             ))}
           </div>
         )}
-        <button type="button" onClick={toggleReactionPicker} aria-label="React" className="react-toggle">
+        <button
+          ref={reactionToggleRef}
+          type="button"
+          onClick={toggleReactionPicker}
+          aria-label="React"
+          aria-expanded={showReactionPicker}
+          className="react-toggle">
           <SmileIcon />
         </button>
         <input
