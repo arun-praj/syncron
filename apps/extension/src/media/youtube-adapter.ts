@@ -47,6 +47,10 @@ const MAX_RATE_CORRECTION = 0.05;
 const RATE_CHANGE_MATCH_EPSILON = 0.001;
 const CORRECTION_INTERVAL_MS = 100;
 const REMOTE_EVENT_WINDOW_MS = 1000;
+// YouTube can emit a trailing pause/play while it settles a seek. Keep those
+// native events out of the room protocol; the seek event already carries the
+// authoritative position and the server coalesces it briefly.
+const SEEK_EVENT_SETTLE_MS = 200;
 const ATTACH_RETRY_MS = 500;
 const AUDIO_CHANGE_DEBOUNCE_MS = 50;
 
@@ -91,6 +95,7 @@ export class YoutubeMediaAdapter {
   private lockedMedia: { mediaId: string | null; url: string } | null = null;
   private allowNextNavigation = false;
   private seeking = false;
+  private suppressPlaybackEventsUntil = 0;
   private stopped = false;
   private readonly listeners = new Set<(event: LocalMediaEvent) => void>();
   private readonly onNavigate = () => this.handleNavigation();
@@ -159,6 +164,7 @@ export class YoutubeMediaAdapter {
     this.lockedMedia = null;
     this.allowNextNavigation = false;
     this.seeking = false;
+    this.suppressPlaybackEventsUntil = 0;
     this.remoteEventTypes.clear();
     this.remoteRateChangeTarget = null;
     this.autoplayBlocked = false;
@@ -363,14 +369,15 @@ export class YoutubeMediaAdapter {
       this.seeking = true;
     });
     on("play", () => {
-      if (!this.seeking) this.emitControlEvent("play");
+      if (!this.isSeeking()) this.emitControlEvent("play");
     });
     on("pause", () => {
-      if (!this.seeking) this.emitControlEvent("pause");
+      if (!this.isSeeking()) this.emitControlEvent("pause");
     });
     on("seeked", () => {
-      this.seeking = false;
       this.emitControlEvent("seek");
+      this.seeking = false;
+      this.suppressPlaybackEventsUntil = Date.now() + SEEK_EVENT_SETTLE_MS;
     });
     on("ratechange", () => this.emitControlEvent("ratechange"));
     on("volumechange", () => {
@@ -381,7 +388,7 @@ export class YoutubeMediaAdapter {
     });
     on("waiting", () => this.emitBuffering(true));
     on("playing", () => {
-      if (this.seeking) return;
+      if (this.isSeeking()) return;
       this.reapplyRemote();
       this.correctDrift();
       this.emitBuffering(false);
@@ -416,6 +423,7 @@ export class YoutubeMediaAdapter {
     }
     this.videoListeners = [];
     this.seeking = false;
+    this.suppressPlaybackEventsUntil = 0;
     this.correctionActive = false;
     if (this.audioChangeTimer) clearTimeout(this.audioChangeTimer);
     this.audioChangeTimer = null;
@@ -500,6 +508,10 @@ export class YoutubeMediaAdapter {
     if (!snapshot) return;
     this.pendingLocalControlUntil = Date.now() + REMOTE_EVENT_WINDOW_MS;
     this.notify({ type, snapshot });
+  }
+
+  private isSeeking(): boolean {
+    return this.seeking || Date.now() < this.suppressPlaybackEventsUntil;
   }
 
   private emitAudioChange(): void {

@@ -219,6 +219,11 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
         ([a, x], [b, y]) => x.connectedAt - y.connectedAt || a.localeCompare(b),
       );
   }
+  private selectNextHost(): string | null {
+    const candidates = this.connected();
+    if (candidates.length === 0) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)]![0];
+  }
   async members() {
     const r = await this.store.room(this.id);
     return Promise.all(
@@ -268,8 +273,8 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       reason: kicked ? "KICKED" : "LEFT",
     });
     if (wasHost && !options.transferTo) {
-      const next = this.connected()[0];
-      if (next) await this.transfer(next[0]);
+      const next = this.selectNextHost();
+      if (next) await this.transfer(next);
       else await this.end("EMPTY_TIMEOUT");
     }
     await this.removeMedia(userId);
@@ -425,8 +430,8 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       this.send("room.member_left", { userId, reason: "DISCONNECTED_TIMEOUT" });
       await this.removeMedia(userId);
       if (wasHost) {
-        const next = this.connected()[0];
-        if (next) await this.transfer(next[0]);
+        const next = this.selectNextHost();
+        if (next) await this.transfer(next);
         else await this.end("EMPTY_TIMEOUT");
       }
     }

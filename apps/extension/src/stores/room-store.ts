@@ -120,6 +120,7 @@ interface RoomState {
   autoplayBlocked: boolean;
   navigationWarning: string | null;
   controlWarning: string | null;
+  hostNotification: string | null;
   wsConnected: boolean;
   // Set when the server force-removed us (kicked, or the room ended) so
   // RoomScreen can navigate away and say why, instead of silently landing
@@ -151,6 +152,7 @@ interface RoomState {
   dismissNavigationWarning: () => void;
   showControlWarning: () => void;
   dismissControlWarning: () => void;
+  clearHostNotification: () => void;
 }
 
 export const useRoomStore = create<RoomState>((set, get) => ({
@@ -175,6 +177,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   autoplayBlocked: false,
   navigationWarning: null,
   controlWarning: null,
+  hostNotification: null,
   wsConnected: false,
   forceLeaveReason: null,
 
@@ -210,6 +213,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
       autoplayBlocked: false,
       navigationWarning: null,
       controlWarning: null,
+      hostNotification: null,
       wsConnected: false,
       forceLeaveReason: null,
       playbackSync: null,
@@ -456,6 +460,22 @@ export const useRoomStore = create<RoomState>((set, get) => ({
                 canShareInvite: isSelfHost || s.identity.canShareInvite,
               }
             : s.identity,
+          hostNotification: isSelfHost ? "You are now the host." : null,
+          messages: [
+            ...s.messages,
+            systemMessage(
+              isSelfHost
+                ? "You are now the host"
+                : `${formatMemberLabel(
+                    {
+                      id: hostId,
+                      name: event.payload.host.displayName,
+                      username: event.payload.host.username,
+                    },
+                    s.identity?.selfUserId,
+                  )} is now the host`,
+            ),
+          ],
         }));
         if (isSelfHost) {
           void api.getInvite(roomId).then(({ inviteUrl }) => {
@@ -563,6 +583,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   dismissControlWarning: () => set({ controlWarning: null }),
   showControlWarning: () =>
     set({ controlWarning: "Only the host can control playback, volume, and mute in this party." }),
+  clearHostNotification: () => set({ hostNotification: null }),
 
   copyInvite: async () => {
     const { identity } = get();

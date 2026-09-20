@@ -12,13 +12,15 @@ Better Auth is mounted at /api/auth/*. Its authenticated `POST /api/auth/change-
 | PATCH /me | {username?,displayName?,avatarId?}, at least one | {user} | self |
 | POST /me/onboarding | {username,avatarId,displayName?} | {user} | verified user without/with onboarding |
 | GET /users/:userId | — | {user} public profile | authenticated |
-| POST /rooms | {name?,everyoneCanControl,allowMembersToShareInvite,media:{provider,mediaId,url},initialPlayback?:{position,paused,playbackRate,muted,volume}} | 201 {room,inviteUrl}; 200 with the existing active room when the caller already owns one | authenticated and onboarded |
+| POST /rooms | {name?,everyoneCanControl,allowMembersToShareInvite,media:{provider,mediaId,url},initialPlayback?:{position,paused,playbackRate,muted,volume}} | 201 {room,inviteUrl}; 200 with the existing active room when the caller is already its host | authenticated and onboarded |
 | POST /rooms/preview | {invite} | {preview:{name,title,host,media,participantCount,maxParticipants,everyoneCanControl,allowMembersToShareInvite}}; does not create membership | authenticated and onboarded |
+| GET /rooms/previous | — | {room:null|room}; returns the caller's latest active party they left voluntarily or lost connection from | authenticated and onboarded |
 | GET /rooms/:roomId | — | {room} | historical member |
 | GET /rooms/:roomId/invite | — | {inviteUrl} | active host, or active member when `allowMembersToShareInvite=true` |
 | POST /rooms/:roomId/invite/rotate | {} | {inviteUrl} | active host |
 | POST /rooms/join | {invite} | {room,membership} | authenticated |
 | POST /rooms/:roomId/join | {invite} | {room,membership} | authenticated; matching room |
+| POST /rooms/:roomId/rejoin | {} | {room,membership} | historical member whose latest departure was not a kick |
 | POST /rooms/:roomId/leave | `{disband?,transferTo?}` | 204 | active member; host may disband or transfer host access before leaving; repeated leave is safe |
 | POST /rooms/:roomId/end | {} | 204 | active host |
 | PATCH /rooms/:roomId/settings | {everyoneCanControl:boolean} | {room} | active host |
@@ -29,7 +31,7 @@ Better Auth is mounted at /api/auth/*. Its authenticated `POST /api/auth/change-
 | POST /rooms/:roomId/livekit-token | {} | {url,token,roomName,participantIdentity} | active member |
 | PATCH /rooms/:roomId/members/:userId/microphone | {allowed:boolean} | {allowed} | active host |
 
-Only one `ACTIVE` room may be owned by a user as creator or host. Repeating `POST /rooms` while that room is active is idempotent and returns that room instead of creating another one.
+Only one `ACTIVE` room may have a given current host. Repeating `POST /rooms` while that room is active is idempotent and returns that room instead of creating another one. A former creator who voluntarily leaves may start a new room while the previous room continues under its transferred host; the previous-room endpoint and rejoin route make that choice explicit.
 
 Room: id, name, status, everyoneCanControl, allowMembersToShareInvite, maxParticipants (25), host (PublicUser), createdAt, endedAt, media (destination or null), hasPlaybackState. PublicUser: id, username, avatarId, displayName, image. /me additionally includes email, emailVerified, createdAt, onboardingCompletedAt. Member: user, role, joinedAt, connected, microphoneAllowed. Timestamps are ISO UTC.
 
@@ -312,6 +314,6 @@ Sent to target before disconnect when possible.
 
 Client sequence is strictly increasing per socket; stale values produce STALE_SEQUENCE. All events require active membership. Controls require host or everyoneCanControl. Invalid payloads produce protocol.error VALIDATION_ERROR; controls over 30/sec sustained, burst 60 produce RATE_LIMITED. Send client.ping at least every 15 seconds; 30 seconds without an event closes the socket. Replacing a socket cannot disconnect its replacement. Seek broadcasts are coalesced to the latest accepted state over 50ms; another control flushes the pending seek first. Initial connection automatically receives state/no_state. Playback positions must be finite and nonnegative, rates 0.25–4, volumes 0–1, http(s) URLs at most 2048 characters, titles at most 200. Buffering is informational and returns playback.buffering with userId, buffering and position. Rate and audio changes before initial media produce NO_PLAYBACK_STATE. A host receiving playback.no_state after a coordinator restart republishes its current full playback snapshot; members wait for that state.
 
-Disconnected members retain their active membership and reserve capacity for a 30-second reconnect grace period. Reconnecting within that grace reuses the active membership; otherwise it closes with `DISCONNECTED_TIMEOUT`. Playback and presence remain transient; a server restart may lose playback state, but it does not end the persisted active room. After a disconnected host's grace expires, the earliest connected participant (user ID tie-break) becomes host; if none is connected, the room ends. Explicit host leave transfers immediately to the earliest connected member, or ends the room when none is connected. Repeated leave requests are safe. Ending closes memberships with `ROOM_ENDED` and destroys transient state.
+Disconnected members retain their active membership and reserve capacity for a 30-second reconnect grace period. Reconnecting within that grace reuses the active membership; otherwise it closes with `DISCONNECTED_TIMEOUT`. Playback and presence remain transient; a server restart may lose playback state, but it does not end the persisted active room. After a disconnected host's grace expires, a random connected participant becomes host; if none is connected, the room ends. Explicit host leave transfers immediately to a random connected member, or ends the room when none is connected. The `room.host_changed` event is shown to the new host as `You are now the host` and to other members as a system chat notification naming the new host. Repeated leave requests are safe. Ending closes memberships with `ROOM_ENDED` and destroys transient state.
 
 LiveKit tokens expire in 600 seconds; roomName=sync_<roomId>, identity=Better Auth user ID. Grants: join, subscribe, data, camera and microphone publishing. Kick removes the participant; end deletes the LiveKit room. Chat travels only through LiveKit.

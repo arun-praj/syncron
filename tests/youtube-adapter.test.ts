@@ -266,6 +266,10 @@ test("does not publish transient pause and play events while seeking", () => {
   video.paused = false;
   video.dispatch("play");
   video.dispatch("seeked");
+  video.paused = true;
+  video.dispatch("pause");
+  video.paused = false;
+  video.dispatch("play");
   expect(events).toEqual(["seek"]);
   adapter.stop();
 });

@@ -15,6 +15,7 @@ import {
   meResponse,
   onboarding as onboardingRequest,
   onboardingResponse,
+  previousRoomResponse,
   profileUpdate as profileUpdateRequest,
   roomResponse,
   settings as roomSettingsRequest,
@@ -113,6 +114,15 @@ export const api = {
 
   getRoom: (roomId: string) =>
     request(`/api/v1/rooms/${roomId}`, roomResponse, { method: "GET" }),
+
+  getPreviousRoom: () =>
+    request("/api/v1/rooms/previous", previousRoomResponse, { method: "GET" }),
+
+  rejoinRoom: (roomId: string) =>
+    request(`/api/v1/rooms/${roomId}/rejoin`, joinRoomResponse, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
 
   updateRoomSettings: (roomId: string, input: z.infer<typeof roomSettingsRequest>) =>
     request(`/api/v1/rooms/${roomId}/settings`, roomResponse, {

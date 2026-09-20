@@ -253,6 +253,15 @@ export async function createApp(deps: {
     });
     return c.json({ preview });
   });
+  app.get("/api/v1/rooms/previous", async (c) => {
+    const previous = await store.previousActiveRoom(c.get("userId"));
+    if (!previous) return c.json({ room: null });
+    return c.json({
+      room: await coordinators.run(previous.id, async (coord) =>
+        store.dto(previous.id, await coord.navigation()),
+      ),
+    });
+  });
   app.use("/api/v1/rooms/:roomId/*", async (c, next) => {
     protocol.roomId.parse(c.req.param("roomId"));
     await next();
@@ -286,6 +295,20 @@ export async function createApp(deps: {
       ),
     ),
   );
+  app.post("/api/v1/rooms/:roomId/rejoin", async (c) => {
+    const id = c.req.param("roomId");
+    const uid = c.get("userId");
+    return c.json(
+      await coordinators.run(id, async (coord) => {
+        const previousMembership = await store.latestMembership(id, uid);
+        if (!previousMembership || previousMembership.leaveReason === "KICKED")
+          throw new DomainError("NOT_ROOM_MEMBER");
+        const membership = await coord.join(uid);
+        const navigation = await coord.navigation();
+        return { room: await store.dto(id, navigation), membership };
+      }),
+    );
+  });
   for (const rotate of [false, true])
     app.on(
       rotate ? "POST" : "GET",

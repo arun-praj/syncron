@@ -109,7 +109,7 @@ Initial label: normalized email local part, then provider first name, then user;
 
 - `ENDED` requires `ended_at` at application level.
 - Ended rooms are immutable except safe administrative/internal metadata fixes.
-- Partial unique indexes allow only one `ACTIVE` room per creator and per current host.
+- A partial unique index allows only one `ACTIVE` room per current host. A former creator may start a new room after leaving a party whose host was transferred.
 
 ### Recommended indexes
 

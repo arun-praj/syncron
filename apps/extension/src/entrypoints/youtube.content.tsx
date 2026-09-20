@@ -103,6 +103,14 @@ function SidebarFrame({
     <>
       <aside
         aria-label="Syncron"
+        // Keep sidebar interactions inside the extension. YouTube listens
+        // globally for player gestures; a leaked click/double-click can
+        // toggle its internal fullscreen mode and leave the page looking
+        // frozen after switching browser windows.
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
         className={`fixed right-0 top-0 z-[2147483640] h-screen w-[380px] flex-col border-l border-border bg-bg font-sans shadow-2xl ${
           open ? "flex" : "hidden"
         }`}>

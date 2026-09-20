@@ -134,10 +134,10 @@ When a host disconnects unexpectedly:
 
 1. Start a 30-second grace period.
 2. If host reconnects, ownership remains unchanged.
-3. If host does not reconnect, assign host to the longest-connected currently active participant.
-4. Broadcast `room.host_changed`.
+3. If host does not reconnect, assign host to a random currently connected active participant.
+4. Broadcast `room.host_changed`; the new host sees `You are now the host` and all members receive a system chat notification naming the new host.
 
-Explicit room leave by the host may immediately transfer ownership without the grace period.
+Explicit room leave by the host may immediately transfer ownership without the grace period, selecting a random connected member when no target is specified.
 
 ## 6. Session ending
 

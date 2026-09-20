@@ -226,6 +226,7 @@ export const meResponse = z.object({
   }),
 });
 export const roomResponse = z.object({ room });
+export const previousRoomResponse = z.object({ room: room.nullable() });
 export const inviteResponse = z.object({ inviteUrl: z.url() });
 export const createRoomResponse = roomResponse.extend({ inviteUrl: z.url() });
 export const joinRoomResponse = roomResponse.extend({

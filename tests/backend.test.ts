@@ -538,6 +538,39 @@ test("REST auth, invite rotation, host checks, profile labels, LiveKit grants an
   );
 });
 
+test("former creators can choose to rejoin or start a new party, while kicked users see no previous party", async () => {
+  const s = await setup();
+  const first = await s.login("first@example.com");
+  s.advance(61000);
+  const second = await s.login("second@example.com");
+  const created = await (await s.request("/api/v1/rooms", { media: roomMedia }, first.token)).json();
+  const roomId = created.room.id as string;
+  const invite = new URL(created.inviteUrl).hash.slice(8);
+  expect((await s.request("/api/v1/rooms/join", { invite }, second.token)).status).toBe(200);
+
+  await s.store.host(roomId, second.id);
+  await s.store.close(roomId, first.id, "LEFT");
+
+  const previous = await s.request("/api/v1/rooms/previous", undefined, first.token);
+  expect(await previous.json()).toMatchObject({ room: { id: roomId, host: { id: second.id } } });
+
+  expect((await s.request(`/api/v1/rooms/${roomId}/rejoin`, {}, first.token)).status).toBe(200);
+  await s.request(`/api/v1/rooms/${roomId}/leave`, {}, first.token);
+
+  const newParty = await (await s.request("/api/v1/rooms", { media: roomMedia }, first.token)).json();
+  expect(newParty.room.id).not.toBe(roomId);
+  expect((await s.store.room(roomId)).status).toBe("ACTIVE");
+  expect((await s.store.room(roomId)).hostUserId).toBe(second.id);
+
+  s.advance(61000);
+  const kicked = await s.login("kicked@example.com");
+  const kickedRoom = await (await s.request("/api/v1/rooms", { media: roomMedia }, second.token)).json();
+  const kickedInvite = new URL(kickedRoom.inviteUrl).hash.slice(8);
+  expect((await s.request("/api/v1/rooms/join", { invite: kickedInvite }, kicked.token)).status).toBe(200);
+  await s.store.close(kickedRoom.room.id, kicked.id, "KICKED");
+  expect((await (await s.request("/api/v1/rooms/previous", undefined, kicked.token)).json()).room).toBeNull();
+});
+
 test("invites reject tampering, wrong signatures and invalid claims", async () => {
   const invites = new Invites(c.INVITE_SECRET, c.APP_URL);
   const id = newId();
@@ -959,6 +992,50 @@ test("explicit host leave transfers to a connected member or ends an empty room"
   expect((await s.store.room(emptyId)).status).toBe("ENDED");
   expect(await s.store.active(emptyId)).toHaveLength(0);
   await empty.leave(solo);
+});
+
+test("unexpected host disconnect randomly transfers ownership and two-person rooms pick the other member", async () => {
+  const s = await setup();
+  const host = await s.seed("alice");
+  const member = await s.seed("bobby");
+  const other = await s.seed("casey");
+  const id = await s.store.create(host);
+  const coord = new MemoryRoomCoordinator(id, s.store, s.media, s.now);
+  await coord.recover();
+  await coord.join(member);
+  await coord.join(other);
+  const hostConnection = await coord.connect(host, socket());
+  const memberConnection = await coord.connect(member, socket());
+  const otherSocket = socket();
+  const otherConnection = await coord.connect(other, otherSocket);
+
+  vi.spyOn(Math, "random").mockReturnValue(0.99);
+  await coord.disconnect(host, hostConnection);
+  s.advance(30001);
+  await coord.receive(member, memberConnection, event("client.ping", { clientTime: s.now() }));
+  await coord.receive(other, otherConnection, event("client.ping", { clientTime: s.now() }));
+  await coord.tick();
+
+  expect((await s.store.room(id)).hostUserId).toBe(other);
+  expect(otherSocket.events.at(-1)).toMatchObject({
+    type: "room.host_changed",
+    payload: { host: { id: other } },
+  });
+
+  const twoHost = await s.seed("dana");
+  const onlyMember = await s.seed("erin");
+  const twoPersonId = await s.store.create(twoHost);
+  const twoPerson = new MemoryRoomCoordinator(twoPersonId, s.store, s.media, s.now);
+  await twoPerson.recover();
+  await twoPerson.join(onlyMember);
+  const twoHostConnection = await twoPerson.connect(twoHost, socket());
+  const onlyMemberConnection = await twoPerson.connect(onlyMember, socket());
+  await twoPerson.disconnect(twoHost, twoHostConnection);
+  s.advance(30001);
+  await twoPerson.receive(onlyMember, onlyMemberConnection, event("client.ping", { clientTime: s.now() }));
+  await twoPerson.tick();
+
+  expect((await s.store.room(twoPersonId)).hostUserId).toBe(onlyMember);
 });
 
 test("host can transfer ownership to the selected member before leaving", async () => {

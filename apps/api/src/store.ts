@@ -1,4 +1,4 @@
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Database } from "../../../packages/db/src/index.js";
 import {
   memberships,
@@ -24,9 +24,31 @@ export class Store {
     return this.db.query.rooms.findFirst({
       where: and(
         eq(rooms.status, "ACTIVE"),
-        or(eq(rooms.creatorUserId, userId), eq(rooms.hostUserId, userId)),
+        eq(rooms.hostUserId, userId),
       ),
     });
+  }
+  async latestMembership(roomId: string, userId: string) {
+    return (await this.db
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.roomId, roomId), eq(memberships.userId, userId)))
+      .orderBy(desc(memberships.joinedAt))
+      .limit(1))[0];
+  }
+  async previousActiveRoom(userId: string) {
+    const rows = await this.db
+      .select({ room: rooms, membership: memberships })
+      .from(memberships)
+      .innerJoin(rooms, eq(rooms.id, memberships.roomId))
+      .where(and(eq(rooms.status, "ACTIVE"), eq(memberships.userId, userId)))
+      .orderBy(desc(memberships.joinedAt));
+    const seen = new Set<string>();
+    return rows.find(({ room, membership }) => {
+      if (seen.has(room.id)) return false;
+      seen.add(room.id);
+      return membership.leftAt !== null && membership.leaveReason !== "KICKED";
+    })?.room;
   }
   async publicUser(id: string) {
     const row = await this.db

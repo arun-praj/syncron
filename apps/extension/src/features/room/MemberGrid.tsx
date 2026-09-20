@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { avatarGlyphSrc } from "@/components/AvatarGlyph";
 import { MicMiniIcon, MicOffMiniIcon } from "@/features/room/icons";
+import { formatMemberLabel } from "@/features/room/member-label";
 import { useRoomStore, type RoomMember } from "@/stores/room-store";
 
 function useMediaStreamTrack(track: MediaStreamTrack | null) {
@@ -30,10 +31,10 @@ function MemberAudio({ member }: { member: RoomMember }) {
 
 // Renders a member's live camera feed when they have one, falling back to
 // their avatar otherwise (camera off, muted, or not yet subscribed).
-function MemberMedia({ member, className }: { member: RoomMember; className?: string }) {
+function MemberMedia({ member, className, label }: { member: RoomMember; className?: string; label: string }) {
   const videoRef = useMediaStreamTrack(member.videoTrack);
   if (!member.videoTrack) {
-    return <img src={avatarGlyphSrc(member.avatarId)} alt={member.name} className={className} />;
+    return <img src={avatarGlyphSrc(member.avatarId)} alt={label} className={className} />;
   }
   return (
     <video
@@ -51,11 +52,11 @@ function MemberMedia({ member, className }: { member: RoomMember; className?: st
 // status-bar self-controls, which tint the icon blue when unmuted. No
 // longer clickable: muted state now reflects each member's real LiveKit
 // audio track, which isn't something another member can toggle for them.
-function MuteBadge({ member, className }: { member: RoomMember; className: string }) {
+function MuteBadge({ member, className, label }: { member: RoomMember; className: string; label: string }) {
   return (
     <div
       role="img"
-      aria-label={member.muted ? `${member.name} is muted` : `${member.name} is unmuted`}
+      aria-label={member.muted ? `${label} is muted` : `${label} is unmuted`}
       className={className}
       style={{ background: member.muted ? "rgba(220,38,38,0.85)" : "rgba(0,0,0,0.55)" }}>
       {member.muted ? <MicOffMiniIcon color="#fff" /> : <MicMiniIcon color="#fff" />}
@@ -63,11 +64,32 @@ function MuteBadge({ member, className }: { member: RoomMember; className: strin
   );
 }
 
+function MemberFloaters({ members, selfUserId }: { members: RoomMember[]; selfUserId?: string }) {
+  return (
+    <div className="member-floaters" aria-label="Party members">
+      <div className="member-floaters-track">
+        {members.map((member) => {
+          const label = formatMemberLabel(member, selfUserId);
+          return (
+            <div key={member.id} className="member-floater">
+              <div className={`member-floater-avatar${member.videoTrack ? " member-floater-avatar--live" : ""}`}>
+                <MemberMedia member={member} label={label} className="member-floater-media" />
+                {member.isHost && <span className="member-floater-ring" aria-label="Host" />}
+                <MuteBadge member={member} label={label} className="member-floater-mute" />
+              </div>
+              <span className="member-floater-name">{label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function MemberGrid() {
   const members = useRoomStore((s) => s.members);
-
-  // Nothing else to show tiles for when the host is alone in the room.
-  if (members.length <= 1) return null;
+  const selfUserId = useRoomStore((s) => s.identity?.selfUserId);
+  const hasLiveVideo = members.some((member) => member.videoTrack !== null);
 
   const compact = members.length > 4;
 
@@ -76,16 +98,17 @@ export function MemberGrid() {
       {members.map((member) => (
         <MemberAudio key={member.id} member={member} />
       ))}
-      {compact ? (
+      <MemberFloaters members={members} selfUserId={selfUserId} />
+      {!hasLiveVideo ? null : compact ? (
         <div className="members-strip">
           <div className="strip-row">
             {members.map((member) => (
               <div key={member.id} className="strip-tile">
                 <div className="strip-video">
-                  <MemberMedia member={member} />
-                  <MuteBadge member={member} className="mute-btn-sm" />
+                  <MemberMedia member={member} label={formatMemberLabel(member, selfUserId)} />
+                  <MuteBadge member={member} label={formatMemberLabel(member, selfUserId)} className="mute-btn-sm" />
                 </div>
-                <span className="strip-name">{member.name}</span>
+                <span className="strip-name">{formatMemberLabel(member, selfUserId)}</span>
                 {!member.synced && (
                   <div className="sync-badge-inline">
                     <span className="sync-dot" />
@@ -101,9 +124,9 @@ export function MemberGrid() {
           <div className="members-grid">
             {members.map((member) => (
               <div key={member.id} className="grid-tile">
-                <MemberMedia member={member} />
+                <MemberMedia member={member} label={formatMemberLabel(member, selfUserId)} />
                 <div className="grid-name-bar">
-                  <span className="grid-name">{member.name}</span>
+                  <span className="grid-name">{formatMemberLabel(member, selfUserId)}</span>
                   {member.isHost && <span className="host-badge">Host</span>}
                 </div>
                 {!member.synced && (
@@ -112,7 +135,7 @@ export function MemberGrid() {
                     <span className="sync-text">Buffering…</span>
                   </div>
                 )}
-                <MuteBadge member={member} className="mute-btn-grid" />
+                <MuteBadge member={member} label={formatMemberLabel(member, selfUserId)} className="mute-btn-grid" />
               </div>
             ))}
           </div>

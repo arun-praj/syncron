@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { browser, type PublicPath } from "wxt/browser";
+import type { Room } from "@syncron/protocol";
 
 import { isRateLimited } from "@/auth-flow";
 import { ChevronLeftIcon, PeopleIcon } from "@/components/icons";
@@ -76,6 +77,7 @@ export default function PartySetupScreen({
   const [allowShare, setAllowShare] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [previousRoom, setPreviousRoom] = useState<Room | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,44 +101,94 @@ export default function PartySetupScreen({
     }
   };
 
+  const createParty = async () => {
+    const playback = await readPlaybackSnapshot?.();
+    resetPlaybackToStart?.();
+    const { room, inviteUrl } = await api.createRoom({
+      name: tabTitle.slice(0, 100),
+      everyoneCanControl: allowControl,
+      allowMembersToShareInvite: allowShare,
+      media: { provider: service.id, mediaId: null, url: tabUrl },
+      ...(playback
+        ? {
+            initialPlayback: {
+              position: 0,
+              paused: true,
+              playbackRate: 1,
+              muted: playback.muted,
+              volume: playback.volume,
+            },
+          }
+        : {}),
+    });
+    enterRoom({
+      service,
+      tabId,
+      tabTitle,
+      roomId: room.id,
+      isHost: true,
+      everyoneCanControl: room.everyoneCanControl,
+      canShareInvite: true,
+      inviteUrl,
+      members: [
+        { id: room.host.id, name: "You", avatarId: selfUser?.avatarId ?? "1", isHost: true },
+      ],
+      selfUserId: room.host.id,
+    });
+    onEnterRoom();
+  };
+
   const startParty = async () => {
     if (!canStartParty) return;
     setIsStarting(true);
     setError(null);
     try {
-      const playback = await readPlaybackSnapshot?.();
-      resetPlaybackToStart?.();
-      const { room, inviteUrl } = await api.createRoom({
-        name: tabTitle.slice(0, 100),
-        everyoneCanControl: allowControl,
-        allowMembersToShareInvite: allowShare,
-        media: { provider: service.id, mediaId: null, url: tabUrl },
-        ...(playback
-          ? {
-              initialPlayback: {
-                position: 0,
-                paused: true,
-                playbackRate: 1,
-                muted: playback.muted,
-                volume: playback.volume,
-              },
-            }
-          : {}),
-      });
+      const { room } = await api.getPreviousRoom();
+      if (room) {
+        setPreviousRoom(room);
+        return;
+      }
+      await createParty();
+    } catch (e) {
+      setError(startPartyErrorMessage(e));
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const rejoinPreviousRoom = async () => {
+    if (!previousRoom) return;
+    setIsStarting(true);
+    setError(null);
+    try {
+      const { room, membership } = await api.rejoinRoom(previousRoom.id);
+      const [me, { members }] = await Promise.all([api.me(), api.getRoomMembers(room.id)]);
+      const isHost = membership.role === "HOST";
+      const canShareInvite = isHost || room.allowMembersToShareInvite;
+      const inviteUrl = canShareInvite
+        ? await api.getInvite(room.id).then((result) => result.inviteUrl).catch(() => null)
+        : null;
       enterRoom({
         service,
         tabId,
         tabTitle,
         roomId: room.id,
-        isHost: true,
+        isHost,
         everyoneCanControl: room.everyoneCanControl,
-        canShareInvite: true,
+        canShareInvite,
         inviteUrl,
-        members: [
-          { id: room.host.id, name: "You", avatarId: selfUser?.avatarId ?? "1", isHost: true },
-        ],
-        selfUserId: room.host.id,
+        members: members.map((member) => ({
+          id: member.user.id,
+          name: member.user.id === me.user.id ? "You" : member.user.displayName,
+          username: member.user.username,
+          avatarId: member.user.avatarId ?? "1",
+          isHost: member.role === "HOST",
+        })),
+        selfUserId: me.user.id,
+        initialMicrophoneEnabled: false,
+        initialCameraEnabled: false,
       });
+      setPreviousRoom(null);
       onEnterRoom();
     } catch (e) {
       setError(startPartyErrorMessage(e));
@@ -230,6 +282,34 @@ export default function PartySetupScreen({
 
         {error && <p className="ps-error">{error}</p>}
 
+        {previousRoom && (
+          <div className="ps-choice" role="dialog" aria-modal="true" aria-labelledby="ps-choice-title">
+            <div className="ps-choice-title" id="ps-choice-title">You have an active previous party</div>
+            <p className="ps-choice-copy">
+              {previousRoom.name ?? "Previous watch party"} · hosted by {previousRoom.host.displayName}
+            </p>
+            <button type="button" className="ps-choice-primary" disabled={isStarting} onClick={() => void rejoinPreviousRoom()}>
+              {isStarting ? "Rejoining…" : "Rejoin previous party"}
+            </button>
+            <button
+              type="button"
+              className="ps-choice-secondary"
+              disabled={isStarting}
+              onClick={() => {
+                setPreviousRoom(null);
+                setIsStarting(true);
+                void createParty()
+                  .catch((e) => setError(startPartyErrorMessage(e)))
+                  .finally(() => setIsStarting(false));
+              }}>
+              Start a new party
+            </button>
+            <button type="button" className="ps-choice-cancel" disabled={isStarting} onClick={() => setPreviousRoom(null)}>
+              Cancel
+            </button>
+          </div>
+        )}
+
         {!activeRoom && (
           <p className="ps-media-hint" role="status">
             {canStartParty
@@ -238,21 +318,21 @@ export default function PartySetupScreen({
           </p>
         )}
 
-        {activeRoom ? (
-          <button type="button" className="ps-start-btn" onClick={onReturnToRoom}>
-            <PeopleIcon />
-            Return to party
-          </button>
-        ) : (
-          <button
-            type="button"
-            className={`ps-start-btn${canStartParty ? " ps-start-btn--ready" : ""}`}
-            disabled={isStarting || !canStartParty}
-            onClick={() => void startParty()}>
-            <PeopleIcon />
-            {isStarting ? "Starting…" : "Start watch party"}
-          </button>
-        )}
+        {!previousRoom && (activeRoom ? (
+            <button type="button" className="ps-start-btn" onClick={onReturnToRoom}>
+              <PeopleIcon />
+              Return to party
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`ps-start-btn${canStartParty ? " ps-start-btn--ready" : ""}`}
+              disabled={isStarting || !canStartParty}
+              onClick={() => void startParty()}>
+              <PeopleIcon />
+              {isStarting ? "Starting…" : "Start watch party"}
+            </button>
+          ))}
       </div>
     </div>
   );

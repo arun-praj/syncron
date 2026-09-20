@@ -29,6 +29,13 @@
       "when": 1789750001000,
       "tag": "0003_one_active_room_per_creator",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789925182352,
+      "tag": "0004_married_mariko_yashida",
+      "breakpoints": true
     }
   ]
 }

@@ -36,6 +36,8 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   const dismissNavigationWarning = useRoomStore((s) => s.dismissNavigationWarning);
   const controlWarning = useRoomStore((s) => s.controlWarning);
   const dismissControlWarning = useRoomStore((s) => s.dismissControlWarning);
+  const hostNotification = useRoomStore((s) => s.hostNotification);
+  const clearHostNotification = useRoomStore((s) => s.clearHostNotification);
   const forceLeaveReason = useRoomStore((s) => s.forceLeaveReason);
   const liveKit = useRoomStore((s) => s.liveKit);
   const liveKitReady = useRoomStore((s) => s.liveKitReady);
@@ -54,6 +56,12 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   useEffect(() => {
     if (forceLeaveReason) onLeave();
   }, [forceLeaveReason, onLeave]);
+
+  useEffect(() => {
+    if (!hostNotification) return;
+    const timer = window.setTimeout(clearHostNotification, 7000);
+    return () => window.clearTimeout(timer);
+  }, [clearHostNotification, hostNotification]);
 
   // Guards a render race between leaveRoom()/forceLeave() clearing
   // identity and the parent's onLeave prop swapping this screen out —
@@ -180,6 +188,12 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
           {identity.isHost && (
             <button type="button" onClick={dismissControlWarning}>Dismiss</button>
           )}
+        </div>
+      )}
+
+      {hostNotification && (
+        <div className="sync-banner" role="status">
+          <span>{hostNotification}</span>
         </div>
       )}
 
