@@ -6,12 +6,17 @@ import { OPEN_SERVICE_TAB, OPEN_YOUTUBE_SIDEBAR } from "@/lib/extension-messages
 import type { StreamingService } from "@/lib/streaming-services";
 import HomeScreen from "@/screens/HomeScreen";
 import HowItWorksScreen from "@/screens/HowItWorksScreen";
-import LoginScreen from "@/screens/LoginScreen";
+import AuthLandingScreen from "@/screens/AuthLandingScreen";
 import OnboardingScreen from "@/screens/OnboardingScreen";
 import ProfileScreen from "@/screens/ProfileScreen";
-import SignupScreen from "@/screens/SignupScreen";
-import { watchStoredSession } from "@/services/auth/client";
+import { consumeAuthResult, watchAuthResult, watchStoredSession } from "@/services/auth/client";
 import { useAuthStore } from "@/stores/auth-store";
+
+async function openAuthTab(mode: "login" | "signup") {
+  await browser.tabs.create({
+    url: `${browser.runtime.getURL("/verify.html")}?mode=${mode}`,
+  });
+}
 
 async function openService(service: StreamingService) {
   await browser.runtime.sendMessage({
@@ -27,23 +32,37 @@ type Page = "auto" | "home" | "profile" | "how-it-works";
 
 export default function App() {
   const { status, hydrate } = useAuthStore();
-  const [authView, setAuthView] = useState<"login" | "signup">("login");
+  const [authResult, setAuthResult] = useState<string | null>(null);
   const [page, setPage] = useState<Page>("auto");
   const detected = useDetectedStreamingTab();
-  const openedVerificationTab = useRef(false);
+  const openedAuthTab = useRef(false);
   const openedYoutubeTab = useRef<number | null>(null);
 
   useEffect(() => {
     void hydrate();
   }, []);
 
+  useEffect(() => {
+    if (status !== "needs-onboarding" || openedAuthTab.current) return;
+    openedAuthTab.current = true;
+    void openAuthTab("login").then(() => window.close());
+  }, [status]);
+
   useEffect(() => watchStoredSession(() => void hydrate()), [hydrate]);
 
   useEffect(() => {
-    if (status !== "needs-verification" || openedVerificationTab.current) return;
-    openedVerificationTab.current = true;
-    void openVerificationTab().then(() => window.close());
-  }, [status]);
+    let active = true;
+    const readResult = () =>
+      void consumeAuthResult().then((message) => {
+        if (active && message) setAuthResult(message);
+      });
+    readResult();
+    const unwatch = watchAuthResult(readResult);
+    return () => {
+      active = false;
+      unwatch();
+    };
+  }, []);
 
   useEffect(() => {
     if (status !== "ready" || page !== "auto" || detected === "loading" || !detected) return;
@@ -66,17 +85,12 @@ export default function App() {
       </div>
     );
   } else if (status === "signed-out") {
-    content =
-      authView === "login" ? (
-        <LoginScreen onSwitchToSignup={() => setAuthView("signup")} />
-      ) : (
-        <SignupScreen onSwitchToLogin={() => setAuthView("login")} />
-      );
-  } else if (status === "needs-verification") {
     content = (
-      <div className="flex h-full items-center justify-center px-8 text-center text-subtext text-ink-secondary">
-        Opening email verification…
-      </div>
+      <AuthLandingScreen
+        message={authResult}
+        onSignIn={() => void openAuthTab("login")}
+        onSignUp={() => void openAuthTab("signup")}
+      />
     );
   } else if (status === "unavailable") {
     content = (
@@ -101,6 +115,7 @@ export default function App() {
   ) {
     content = (
       <HomeScreen
+        message={authResult}
         onOpenProfile={() => setPage("profile")}
         onOpenService={(service) => void openService(service)}
         onOpenHowItWorks={() => setPage("how-it-works")}
@@ -118,7 +133,7 @@ export default function App() {
       : page;
   const viewKey =
     status === "signed-out"
-      ? `signed-out-${authView}`
+      ? "signed-out"
       : status === "ready"
         ? `ready-${resolvedView}`
         : status;

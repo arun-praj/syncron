@@ -1,7 +1,11 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { browser } from "wxt/browser";
 
 import VerifyOtpScreen from "@/screens/VerifyOtpScreen";
+import LoginScreen from "@/screens/LoginScreen";
+import OnboardingScreen from "@/screens/OnboardingScreen";
+import SignupScreen from "@/screens/SignupScreen";
+import { setAuthResult } from "@/services/auth/client";
 import { useAuthStore } from "@/stores/auth-store";
 
 async function closeTab() {
@@ -11,10 +15,20 @@ async function closeTab() {
 
 export default function App() {
   const { status, hydrate, backToSignIn, info } = useAuthStore();
+  const [authView, setAuthView] = useState<"login" | "signup">(() =>
+    new URLSearchParams(window.location.search).get("mode") === "signup" ? "signup" : "login",
+  );
+  const [reportedSuccess, setReportedSuccess] = useState(false);
 
   useEffect(() => {
     void hydrate();
   }, []);
+
+  useEffect(() => {
+    if (status !== "ready" || reportedSuccess) return;
+    setReportedSuccess(true);
+    void setAuthResult(info ?? "Sign in success");
+  }, [info, reportedSuccess, status]);
 
   let content: ReactNode;
   if (status === "loading") {
@@ -25,32 +39,22 @@ export default function App() {
     );
   } else if (status === "needs-verification") {
     content = <VerifyOtpScreen onBack={() => backToSignIn()} />;
+  } else if (status === "needs-onboarding") {
+    content = <OnboardingScreen />;
   } else if (status === "signed-out") {
     content = (
-      <div className="flex min-h-screen flex-col items-center px-[22px] pb-[18px] pt-[26px] text-center">
-        <h1 className="mb-2 text-h1 font-bold text-ink-primary">
-          {info ? "Email verified" : "Open Syncron"}
-        </h1>
-        <p className="text-subtext text-ink-secondary">
-          {info ?? "Use the extension popup to sign in and continue."}
-        </p>
-        <button
-          type="button"
-          onClick={() => void closeTab()}
-          className="mt-5 text-footer text-ink-secondary hover:text-ink-primary hover:underline">
-          Close this tab
-        </button>
-      </div>
+      authView === "login" ? (
+        <LoginScreen onSwitchToSignup={() => setAuthView("signup")} />
+      ) : (
+        <SignupScreen onSwitchToLogin={() => setAuthView("login")} />
+      )
     );
   } else {
-    // "needs-onboarding" or "ready" — verify + auto sign-in already
-    // succeeded in this tab's own store instance (each extension page has
-    // its own module/store instance; only the persisted token is shared).
     content = (
       <div className="flex min-h-screen flex-col items-center px-[22px] pb-[18px] pt-[26px] text-center">
-        <h1 className="mb-2 text-h1 font-bold text-ink-primary">Email verified</h1>
+        <h1 className="mb-2 text-h1 font-bold text-ink-primary">{info ?? "Sign in success"}</h1>
         <p className="text-subtext text-ink-secondary">
-          Your email has been verified. Open the Syncron extension popup to continue.
+          You can close this tab and return to the Syncron extension.
         </p>
         <button
           type="button"

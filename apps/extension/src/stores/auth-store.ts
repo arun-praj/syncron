@@ -67,6 +67,7 @@ interface AuthState {
 // is the safer bet here since that's the one actually exercised against a
 // live backend.
 let pendingPassword: string | null = null;
+let pendingSignup = false;
 let authRevision = 0;
 
 function statusFor(user: SyncronUser): AuthStatus {
@@ -114,6 +115,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signUp: async ({ name, email, password }) => {
+    pendingSignup = true;
     set({ isSubmitting: true, error: null, info: null });
     const { error } = await authClient.signUp.email({ name, email, password });
     set({ isSubmitting: false });
@@ -126,6 +128,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signIn: async ({ email, password }) => {
+    pendingSignup = false;
     authRevision += 1;
     set({ isSubmitting: true, error: null, info: null });
     const { error } = await authClient.signIn.email({ email, password });
@@ -149,7 +152,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     try {
       const { user } = await api.me();
-      set({ isSubmitting: false, status: statusFor(user), user });
+      set({
+        isSubmitting: false,
+        status: statusFor(user),
+        user,
+        info: "Sign in success",
+      });
     } catch (e) {
       set({
         isSubmitting: false,
@@ -188,7 +196,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     try {
       const { user } = await api.me();
-      set({ isSubmitting: false, status: statusFor(user), user, pendingEmail: null });
+      set({
+        isSubmitting: false,
+        status: statusFor(user),
+        user,
+        pendingEmail: null,
+        info: pendingSignup ? "Signup success" : "Sign in success",
+      });
     } catch (e) {
       set({
         isSubmitting: false,
@@ -247,6 +261,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } finally {
       await clearStoredSession();
       pendingPassword = null;
+      pendingSignup = false;
       set({
         isSubmitting: false,
         status: "signed-out",

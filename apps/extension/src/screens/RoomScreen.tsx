@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { RoomContext } from "@livekit/components-react";
+import {
+  CameraDisabledIcon,
+  CameraIcon,
+  MicDisabledIcon,
+  MicIcon,
+  RoomContext,
+} from "@livekit/components-react";
 
 import { InviteHintOverlay } from "@/features/room/InviteHintOverlay";
 import {
@@ -7,8 +13,6 @@ import {
   CameraOffMiniIcon,
   ClipboardIcon,
   LeaveIcon,
-  MicMiniIcon,
-  MicOffMiniIcon,
   SettingsIcon,
 } from "@/features/room/icons";
 import { MemberGrid } from "@/features/room/MemberGrid";
@@ -142,9 +146,10 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
               micBlocked ? "Microphone blocked — click to allow" : selfMuted ? "Unmute yourself" : "Mute yourself"
             }
             title={micBlocked ? "Microphone blocked — click to allow" : undefined}
-            className="self-btn"
-            style={{ background: selfMuted ? "rgba(220,38,38,0.9)" : "#eff6ff" }}>
-            {selfMuted ? <MicOffMiniIcon color="#fff" /> : <MicMiniIcon color="#2563eb" />}
+            className={`self-btn ${selfMuted ? "self-btn--off" : "self-btn--on"}`}
+            aria-pressed={!selfMuted}
+            style={{ color: selfMuted ? "#fff" : "#111827" }}>
+            {selfMuted ? <MicDisabledIcon className="self-btn-icon" aria-hidden="true" /> : <MicIcon className="self-btn-icon" aria-hidden="true" />}
           </button>
           <button
             type="button"
@@ -157,9 +162,10 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
                   : "Turn camera off"
             }
             title={camBlocked ? "Camera blocked — click to allow" : undefined}
-            className="self-btn"
-            style={{ background: selfVideoOff ? "rgba(220,38,38,0.9)" : "#eff6ff" }}>
-            {selfVideoOff ? <CameraOffMiniIcon color="#fff" /> : <CameraMiniIcon color="#2563eb" />}
+            className={`self-btn ${selfVideoOff ? "self-btn--off" : "self-btn--on"}`}
+            aria-pressed={!selfVideoOff}
+            style={{ color: selfVideoOff ? "#fff" : "#111827" }}>
+            {selfVideoOff ? <CameraDisabledIcon className="self-btn-icon" aria-hidden="true" /> : <CameraIcon className="self-btn-icon" aria-hidden="true" />}
           </button>
         </div>
       </div>

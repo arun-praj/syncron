@@ -7,10 +7,12 @@ export default function HomeScreen({
   onOpenProfile,
   onOpenService,
   onOpenHowItWorks,
+  message,
 }: {
   onOpenProfile: () => void;
   onOpenService?: (service: (typeof STREAMING_SERVICES)[number]) => void;
   onOpenHowItWorks: () => void;
+  message?: string | null;
 }) {
   const { user } = useAuthStore();
 
@@ -39,6 +41,7 @@ export default function HomeScreen({
           How it works
         </button>
       </p>
+      {message && <p className="px-[18px] pb-1 text-[11px] text-accent">{message}</p>}
 
       <div className="flex-1 px-[18px] pb-5 pt-2.5">
         <div className="mb-2 px-0.5 text-[11px] font-medium uppercase tracking-wide text-ink-placeholder">
