@@ -5,6 +5,7 @@ import {
   isOpenYoutubeSidebarMessage,
   isOpenServiceTabMessage,
   isSyncronJoinInviteMessage,
+  isSyncronPreviewInviteMessage,
   isSyncronPingMessage,
   isYoutubeContentReadyMessage,
 } from "../apps/extension/src/lib/extension-messages.js";
@@ -37,7 +38,17 @@ describe("extension sidebar messages", () => {
   it("only accepts a join-invite message with a non-empty invite string", () => {
     expect(isSyncronPingMessage({ type: "syncron:ping" })).toBe(true);
     expect(isSyncronPingMessage({ type: "syncron:join-invite" })).toBe(false);
-    expect(isSyncronJoinInviteMessage({ type: "syncron:join-invite", invite: "tok_abc" })).toBe(true);
+    const join = {
+      type: "syncron:join-invite",
+      invite: "tok_abc",
+      microphoneEnabled: false,
+      cameraEnabled: false,
+    };
+    expect(isSyncronJoinInviteMessage(join)).toBe(true);
+    expect(isSyncronPreviewInviteMessage({ type: "syncron:preview-invite", invite: "tok_abc" })).toBe(true);
+    expect(isSyncronPreviewInviteMessage({ type: "syncron:preview-invite", invite: "" })).toBe(false);
+    expect(isSyncronJoinInviteMessage({ ...join, microphoneEnabled: "false" })).toBe(false);
+    expect(isSyncronJoinInviteMessage({ ...join, cameraEnabled: 0 })).toBe(false);
     expect(isSyncronJoinInviteMessage({ type: "syncron:join-invite", invite: "" })).toBe(false);
     expect(isSyncronJoinInviteMessage({ type: "syncron:join-invite" })).toBe(false);
     expect(isSyncronJoinInviteMessage({ type: "syncron:ping" })).toBe(false);

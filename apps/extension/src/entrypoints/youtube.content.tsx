@@ -22,6 +22,9 @@ import "@/style.css";
 
 const YOUTUBE = STREAMING_SERVICES.find((service) => service.id === "YOUTUBE")!;
 const SIDEBAR_WIDTH = 380;
+const contentScriptGlobal = globalThis as typeof globalThis & {
+  __syncronYoutubeContentScript?: boolean;
+};
 
 function useYoutubeTabContext(tabId: number) {
   const [context, setContext] = useState(() => ({
@@ -45,6 +48,27 @@ function useYoutubeTabContext(tabId: number) {
   }, [tabId]);
 
   return context;
+}
+
+function youtubeMediaId(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "youtube.com" || parsed.hostname.endsWith(".youtube.com")
+      ? parsed.searchParams.get("v")
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isDifferentYoutubeMedia(url: string): boolean {
+  try {
+    const target = new URL(url, location.href);
+    if (!(target.hostname === "youtube.com" || target.hostname.endsWith(".youtube.com"))) return false;
+    return youtubeMediaId(target.href) !== youtubeMediaId(location.href);
+  } catch {
+    return false;
+  }
 }
 
 function useYoutubePageLayout(open: boolean) {
@@ -119,24 +143,45 @@ function joinedRoomToIdentity(snapshot: JoinedRoomSnapshot, tabId: number, tabTi
     inviteUrl: snapshot.inviteUrl,
     members: snapshot.members,
     selfUserId: snapshot.selfUserId,
+    initialMicrophoneEnabled: snapshot.initialMicrophoneEnabled ?? false,
+    initialCameraEnabled: snapshot.initialCameraEnabled ?? false,
   };
 }
 
 function SyncronSidebar({
   tabId,
   initialJoinedRoom,
+  initialRoomRecovery,
 }: {
   tabId: number;
   initialJoinedRoom?: JoinedRoomSnapshot;
+  initialRoomRecovery?: boolean;
 }) {
   const { status, hydrate } = useAuthStore();
   const [open, setOpen] = useState(true);
-  const [page, setPage] = useState<"setup" | "room">(initialJoinedRoom ? "room" : "setup");
+  const [recovering, setRecovering] = useState(Boolean(initialRoomRecovery));
+  const [page, setPage] = useState<"setup" | "room" | "reconnecting">(
+    initialJoinedRoom ? "room" : initialRoomRecovery ? "reconnecting" : "setup",
+  );
+  const activeRoom = useRoomStore((s) => s.identity !== null);
   const enterRoom = useRoomStore((s) => s.enterRoom);
   const context = useYoutubeTabContext(tabId);
   const readSnapshot = useCallback(async () => readPagePlaybackSnapshot(), []);
 
   useYoutubePageLayout(open);
+
+  useEffect(() => {
+    if (!activeRoom) return;
+    const blockDifferentMedia = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!target || !isDifferentYoutubeMedia(target.href)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      useRoomStore.getState().showNavigationWarning();
+    };
+    document.addEventListener("click", blockDifferentMedia, true);
+    return () => document.removeEventListener("click", blockDifferentMedia, true);
+  }, [activeRoom]);
 
   useEffect(() => {
     void hydrate();
@@ -151,22 +196,71 @@ function SyncronSidebar({
   useEffect(() => {
     if (!initialJoinedRoom || appliedInitialJoin.current) return;
     appliedInitialJoin.current = true;
-    enterRoom(joinedRoomToIdentity(initialJoinedRoom, tabId, context.tabTitle));
+    if (useRoomStore.getState().identity?.roomId !== initialJoinedRoom.roomId) {
+      enterRoom(joinedRoomToIdentity(initialJoinedRoom, tabId, context.tabTitle));
+    }
+    setRecovering(false);
   }, [initialJoinedRoom, tabId, context.tabTitle, enterRoom]);
+
+  useEffect(() => {
+    if (!recovering) return;
+    let cancelled = false;
+    let retryTimer: number | undefined;
+
+    const retryRoomRecovery = async () => {
+      try {
+        const message = await browser.runtime.sendMessage({ type: YOUTUBE_CONTENT_READY });
+        if (cancelled) return;
+
+        if (isActivateYoutubeSidebarMessage(message) && message.tabId === tabId) {
+          if (message.joinedRoom) {
+            enterRoom(joinedRoomToIdentity(message.joinedRoom, tabId, context.tabTitle));
+            setRecovering(false);
+            setPage("room");
+            return;
+          }
+          if (message.roomRecovery?.status === "reconnecting") {
+            retryTimer = window.setTimeout(retryRoomRecovery, 2000);
+            return;
+          }
+        }
+
+        setRecovering(false);
+        setPage("setup");
+      } catch {
+        if (!cancelled) retryTimer = window.setTimeout(retryRoomRecovery, 2000);
+      }
+    };
+
+    retryTimer = window.setTimeout(retryRoomRecovery, 1500);
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
+  }, [context.tabTitle, enterRoom, recovering, tabId]);
 
   useEffect(() => {
     const onActivation = (message: unknown) => {
       if (!isActivateYoutubeSidebarMessage(message) || message.tabId !== tabId) return;
       setOpen(true);
       if (message.joinedRoom) {
-        enterRoom(joinedRoomToIdentity(message.joinedRoom, tabId, context.tabTitle));
+        if (useRoomStore.getState().identity?.roomId !== message.joinedRoom.roomId) {
+          enterRoom(joinedRoomToIdentity(message.joinedRoom, tabId, context.tabTitle));
+        }
+        setRecovering(false);
         setPage("room");
+      } else if (message.roomRecovery?.status === "reconnecting") {
+        setRecovering(true);
+        setPage("reconnecting");
+      } else if (recovering) {
+        setRecovering(false);
+        setPage("setup");
       }
     };
 
     browser.runtime.onMessage.addListener(onActivation);
     return () => browser.runtime.onMessage.removeListener(onActivation);
-  }, [tabId, context.tabTitle, enterRoom]);
+  }, [context.tabTitle, enterRoom, recovering, tabId]);
 
   const setup = useMemo(
     () => (
@@ -177,10 +271,12 @@ function SyncronSidebar({
         tabUrl={context.tabUrl}
         readPlaybackSnapshot={readSnapshot}
         onBack={() => setOpen(false)}
+        activeRoom={activeRoom}
+        onReturnToRoom={() => setPage("room")}
         onEnterRoom={() => setPage("room")}
       />
     ),
-    [context.tabTitle, context.tabUrl, readSnapshot, tabId],
+    [activeRoom, context.tabTitle, context.tabUrl, readSnapshot, tabId],
   );
 
   let content: ReactNode;
@@ -204,6 +300,13 @@ function SyncronSidebar({
     );
   } else if (status === "needs-onboarding") {
     content = <OnboardingScreen />;
+  } else if (recovering || page === "reconnecting") {
+    content = (
+      <div className="flex min-h-full flex-col items-center justify-center px-6 text-center text-subtext text-ink-secondary">
+        <p className="font-semibold text-ink-primary">Reconnecting to the watch party…</p>
+        <p className="mt-2">Your party membership is being restored.</p>
+      </div>
+    );
   } else if (page === "room") {
     content = <RoomScreen onBack={() => setPage("setup")} onLeave={() => setPage("setup")} />;
   } else {
@@ -244,6 +347,13 @@ export default defineContentScript({
   matches: ["https://www.youtube.com/*"],
   cssInjectionMode: "ui",
   async main(ctx) {
+    // The background fallback may inject this entrypoint while the declared
+    // YouTube content script is still starting. One page must own one
+    // sidebar, adapter, and playback socket; duplicate instances cause
+    // duplicate audio and conflicting playback commands.
+    if (contentScriptGlobal.__syncronYoutubeContentScript) return;
+    contentScriptGlobal.__syncronYoutubeContentScript = true;
+
     browser.runtime.onMessage.addListener((message) => {
       if (!isPlaybackSnapshotRequest(message)) return;
       return Promise.resolve(readPagePlaybackSnapshot());
@@ -258,7 +368,13 @@ export default defineContentScript({
       anchor: "body",
       onMount(container): Root {
         const root = createRoot(container);
-        root.render(<SyncronSidebar tabId={activation.tabId} initialJoinedRoom={activation.joinedRoom} />);
+        root.render(
+          <SyncronSidebar
+            tabId={activation.tabId}
+            initialJoinedRoom={activation.joinedRoom}
+            initialRoomRecovery={activation.roomRecovery?.status === "reconnecting"}
+          />,
+        );
         return root;
       },
       onRemove(root) {

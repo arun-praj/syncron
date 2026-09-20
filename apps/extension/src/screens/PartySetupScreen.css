@@ -157,6 +157,13 @@
   color: #dc2626;
 }
 
+.ps-media-hint {
+  margin: 16px 2px 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #737373;
+}
+
 .ps-start-btn {
   display: flex;
   align-items: center;
@@ -180,7 +187,30 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 3px 8px rgba(30, 144, 255, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
+.ps-start-btn--ready {
+  animation: ps-start-ready 1.8s ease-in-out infinite;
+}
 .ps-start-btn:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+@keyframes ps-start-ready {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+  50% {
+    transform: scale(1.02);
+    filter: brightness(1.08);
+    box-shadow: 0 4px 16px rgba(30, 144, 255, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-start-btn--ready {
+    animation: none;
+  }
 }

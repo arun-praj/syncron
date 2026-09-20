@@ -1,26 +1,8 @@
 // Wraps livekit-client so the rest of the extension deals only in plain
-// MediaStreamTrack / boolean / ChatWireMessage values — the LiveKit
+// MediaStreamTrack / boolean values — the LiveKit
 // dependency stays contained to this one module, same as the WS protocol
 // envelope details stay contained to services/playback-socket.
 import { Room, RoomEvent, Track, type Participant } from "livekit-client";
-import { z } from "zod";
-
-// LiveKit's own data-message feature isn't part of docs/API-schema.md
-// (only "chat travels only through LiveKit" is specified) — this wire
-// format is this client's own design, not a documented server contract.
-// Deliberately carries no author identity: the server never validates
-// chat, so a self-declared sender field would let any participant
-// impersonate anyone else. The real sender is LiveKit's own
-// cryptographically-verified participant identity (see DataReceived
-// below), never something read out of the payload.
-const chatWireMessageSchema = z.object({
-  id: z.string().min(1).max(128),
-  text: z.string().min(1).max(2000),
-  sentAt: z.number().finite(),
-});
-export type ChatWireMessage = z.infer<typeof chatWireMessageSchema>;
-
-const CHAT_TOPIC = "syncron.chat";
 
 export interface LiveKitHandlers {
   // Both are null when that participant has no live, unmuted track —
@@ -30,25 +12,24 @@ export interface LiveKitHandlers {
   // <audio autoPlay>) — being "subscribed" alone does not play sound.
   onVideoTrackChanged: (participantId: string, mediaTrack: MediaStreamTrack | null) => void;
   onAudioTrackChanged: (participantId: string, mediaTrack: MediaStreamTrack | null) => void;
-  // `senderId` is LiveKit's verified participant identity (the Better
-  // Auth user ID baked into their connection token server-side) — never
-  // trust an "author" field inside the payload itself for this.
-  onChatMessage: (senderId: string, message: ChatWireMessage) => void;
   onParticipantLeft?: (participantId: string) => void;
 }
 
 export class LiveKitSession {
-  private room: Room | null = null;
-
+  private room: Room = new Room();
   constructor(private readonly handlers: LiveKitHandlers) {}
 
   get localIdentity(): string | null {
     return this.room?.localParticipant.identity ?? null;
   }
 
+  get currentRoom(): Room | undefined {
+    return this.room;
+  }
+
   async connect(url: string, token: string): Promise<void> {
     await this.disconnect();
-    const room = new Room();
+    const room = this.room;
     this.room = room;
 
     const emitVideoState = (participant: Participant) => {
@@ -75,28 +56,6 @@ export class LiveKitSession {
     room.on(RoomEvent.ParticipantDisconnected, (participant) => {
       this.handlers.onParticipantLeft?.(participant.identity);
     });
-    room.on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
-      if (topic !== CHAT_TOPIC) {
-        return;
-      }
-      if (!participant) {
-        console.warn("[Syncron] chat data received with no participant identity, dropping");
-        return;
-      }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(new TextDecoder().decode(payload));
-      } catch (e) {
-        console.error("[Syncron] chat payload wasn't valid JSON", e);
-        return;
-      }
-      // Untrusted input from another participant — validate its shape
-      // before it goes anywhere near app state or rendering.
-      const result = chatWireMessageSchema.safeParse(parsed);
-      if (result.success) this.handlers.onChatMessage(participant.identity, result.data);
-      else console.error("[Syncron] chat payload failed validation", result.error.issues);
-    });
-
     try {
       await room.connect(url, token);
     } catch (e) {
@@ -108,7 +67,6 @@ export class LiveKitSession {
   async disconnect(): Promise<void> {
     const room = this.room;
     if (!room) return;
-    this.room = null;
     await room.disconnect();
   }
 
@@ -136,14 +94,4 @@ export class LiveKitSession {
     }
   }
 
-  sendChatMessage(message: ChatWireMessage): void {
-    if (!this.room) {
-      console.warn("[Syncron] sendChatMessage called with no active LiveKit room, dropping:", message.id);
-      return;
-    }
-    const payload = new TextEncoder().encode(JSON.stringify(message));
-    this.room.localParticipant
-      .publishData(payload, { reliable: true, topic: CHAT_TOPIC })
-      .catch((e: unknown) => console.error("[Syncron] publishData (chat) failed", e));
-  }
 }

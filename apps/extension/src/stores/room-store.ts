@@ -1,8 +1,9 @@
 import { create } from "zustand";
 
 import type { StreamingService } from "@/lib/streaming-services";
+import { clearActiveYoutubeRoom, setActiveYoutubeRoom } from "@/lib/room-session";
 import { api } from "@/services/api/client";
-import { LiveKitSession, type ChatWireMessage } from "@/services/livekit/client";
+import { LiveKitSession } from "@/services/livekit/client";
 import { PlaybackSyncController, type SyncedPlaybackState } from "@/services/playback-sync/controller";
 import type { ServerEvent } from "@/services/playback-socket/client";
 
@@ -68,6 +69,8 @@ export interface RoomIdentity {
   // Needed to label real-time roster/chat events ("You" vs. their real
   // name) and to tell whether a room.host_changed transfer landed on us.
   selfUserId: string;
+  initialMicrophoneEnabled?: boolean;
+  initialCameraEnabled?: boolean;
 }
 
 // Self-hosted (see public/emoji/NOTICE) instead of the design's external
@@ -88,10 +91,6 @@ function inviteHintUnseen(): boolean {
   return !localStorage.getItem("syncron_invite_hint_seen");
 }
 
-function formatClockTime(epochMs: number): string {
-  return new Date(epochMs).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
 function systemMessage(text: string): RoomChatMessage {
   return { id: `system-${Date.now()}-${Math.random().toString(36).slice(2)}`, kind: "system", text };
 }
@@ -101,8 +100,6 @@ function systemMessage(text: string): RoomChatMessage {
 // get distinct generations, so a slow in-flight connectRealtime() from the
 // first call can never mistake itself for still being current.
 let roomGenerationCounter = 0;
-
-const MAX_CHAT_MESSAGES = 500;
 
 interface RoomState {
   identity: RoomIdentity | null;
@@ -128,6 +125,8 @@ interface RoomState {
   // Authoritative synced playback state from the room's WebSocket — null
   // until the first playback.state/no_state arrives.
   playbackState: SyncedPlaybackState | null;
+  autoplayBlocked: boolean;
+  navigationWarning: string | null;
   wsConnected: boolean;
   // Set when the server force-removed us (kicked, or the room ended) so
   // RoomScreen can navigate away and say why, instead of silently landing
@@ -138,6 +137,7 @@ interface RoomState {
   // meant to be read directly by UI components.
   playbackSync: PlaybackSyncController | null;
   liveKit: LiveKitSession | null;
+  liveKitReady: boolean;
   activeGeneration: number;
 
   enterRoom: (identity: RoomIdentity) => void;
@@ -147,7 +147,6 @@ interface RoomState {
   toggleSelfMute: () => void;
   toggleSelfVideo: () => void;
   setDraft: (draft: string) => void;
-  sendMessage: () => void;
   toggleReactionPicker: () => void;
   sendReaction: (reaction: RoomReaction) => void;
 
@@ -155,6 +154,8 @@ interface RoomState {
   connectRealtime: () => Promise<void>;
   handleRoomEvent: (roomId: string, event: ServerEvent) => void;
   forceLeave: (reason: string) => void;
+  showNavigationWarning: () => void;
+  dismissNavigationWarning: () => void;
 }
 
 export const useRoomStore = create<RoomState>((set, get) => ({
@@ -176,11 +177,14 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   floatingReactions: [],
 
   playbackState: null,
+  autoplayBlocked: false,
+  navigationWarning: null,
   wsConnected: false,
   forceLeaveReason: null,
 
   playbackSync: null,
   liveKit: null,
+  liveKitReady: false,
   activeGeneration: 0,
 
   enterRoom: (identity) => {
@@ -199,7 +203,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
       draft: "",
       isPeerTyping: false,
       selfMuted: true,
-      selfVideoOff: false,
+      selfVideoOff: !(identity.initialCameraEnabled ?? false),
       micBlocked: false,
       camBlocked: false,
       showReactionPicker: false,
@@ -207,11 +211,18 @@ export const useRoomStore = create<RoomState>((set, get) => ({
       copyLabel: "Copy invite link",
       showInviteHint: inviteHintUnseen(),
       playbackState: null,
+      autoplayBlocked: false,
+      navigationWarning: null,
       wsConnected: false,
       forceLeaveReason: null,
       playbackSync: null,
       liveKit: null,
+      liveKitReady: false,
       activeGeneration: ++roomGenerationCounter,
+    });
+    void setActiveYoutubeRoom(identity.tabId, {
+      roomId: identity.roomId,
+      selfUserId: identity.selfUserId,
     });
     void get().connectRealtime();
   },
@@ -242,6 +253,12 @@ export const useRoomStore = create<RoomState>((set, get) => ({
         onConnectionChange: (connected) => {
           if (stillCurrent()) set({ wsConnected: connected });
         },
+        onAutoplayBlocked: (blocked) => {
+          if (stillCurrent()) set({ autoplayBlocked: blocked });
+        },
+        onNavigationBlocked: () => {
+          if (stillCurrent()) get().showNavigationWarning();
+        },
         onRoomEvent: (event) => get().handleRoomEvent(roomId, event),
       },
     );
@@ -261,26 +278,6 @@ export const useRoomStore = create<RoomState>((set, get) => ({
             m.id === participantId ? { ...m, audioTrack: mediaTrack, muted: !mediaTrack } : m,
           ),
         }));
-      },
-      onChatMessage: (senderId, message) => {
-        if (!stillCurrent()) return;
-        set((s) => {
-          // Name/avatar come from our own server-verified roster, never
-          // from the message payload — senderId itself is already
-          // trustworthy (LiveKit's authenticated participant identity),
-          // but a stale/departed sender falls back to a generic label
-          // rather than crashing or showing nothing.
-          const sender = s.members.find((m) => m.id === senderId);
-          const entry: RoomChatMessage = {
-            id: message.id,
-            kind: "chat",
-            authorName: senderId === s.identity?.selfUserId ? "You" : (sender?.name ?? "Someone"),
-            avatarId: sender?.avatarId ?? "1",
-            time: formatClockTime(message.sentAt),
-            text: message.text,
-          };
-          return { messages: [...s.messages, entry].slice(-MAX_CHAT_MESSAGES) };
-        });
       },
       onParticipantLeft: (participantId) => {
         if (!stillCurrent()) return;
@@ -302,9 +299,12 @@ export const useRoomStore = create<RoomState>((set, get) => ({
         void liveKit.disconnect();
         return;
       }
+      set({ liveKitReady: true });
+      const microphoneEnabled = identity.initialMicrophoneEnabled ?? false;
+      const cameraEnabled = identity.initialCameraEnabled ?? false;
       const [micGranted, camGranted] = await Promise.all([
-        liveKit.setMicrophoneEnabled(true),
-        liveKit.setCameraEnabled(true),
+        liveKit.setMicrophoneEnabled(microphoneEnabled),
+        liveKit.setCameraEnabled(cameraEnabled),
       ]);
       if (!stillCurrent()) {
         // The user left (or was kicked) while the browser's permission
@@ -316,7 +316,12 @@ export const useRoomStore = create<RoomState>((set, get) => ({
         void liveKit.disconnect();
         return;
       }
-      set({ selfMuted: !micGranted, micBlocked: !micGranted, selfVideoOff: !camGranted, camBlocked: !camGranted });
+      set({
+        selfMuted: microphoneEnabled ? !micGranted : true,
+        micBlocked: microphoneEnabled && !micGranted,
+        selfVideoOff: cameraEnabled ? !camGranted : true,
+        camBlocked: cameraEnabled && !camGranted,
+      });
     } catch (e) {
       // Playback sync still works without LiveKit — AV/chat just aren't
       // available this session (e.g. LiveKit unreachable/misconfigured).
@@ -415,9 +420,10 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   // leaveRoom(), the server already knows, so this never calls the
   // leave/end API itself.
   forceLeave: (reason) => {
-    const { playbackSync, liveKit } = get();
+    const { identity, playbackSync, liveKit } = get();
     playbackSync?.stop();
     void liveKit?.disconnect();
+    if (identity) void clearActiveYoutubeRoom(identity.tabId);
     // Bumping the generation (not just clearing identity) invalidates any
     // in-flight connectRealtime() promise chain immediately, even before
     // it next checks stillCurrent() — see the enable-calls race note in
@@ -426,6 +432,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
       identity: null,
       playbackSync: null,
       liveKit: null,
+      liveKitReady: false,
       forceLeaveReason: reason,
       activeGeneration: ++roomGenerationCounter,
     });
@@ -438,12 +445,17 @@ export const useRoomStore = create<RoomState>((set, get) => ({
     const { identity, playbackSync, liveKit } = get();
     playbackSync?.stop();
     void liveKit?.disconnect();
-    set({ identity: null, playbackSync: null, liveKit: null, activeGeneration: ++roomGenerationCounter });
+    if (identity) void clearActiveYoutubeRoom(identity.tabId);
+    set({ identity: null, playbackSync: null, liveKit: null, liveKitReady: false, activeGeneration: ++roomGenerationCounter });
     if (!identity) return;
     void (identity.isHost ? api.endRoom(identity.roomId) : api.leaveRoom(identity.roomId)).catch(
       () => undefined,
     );
   },
+
+  dismissNavigationWarning: () => set({ navigationWarning: null }),
+  showNavigationWarning: () =>
+    set({ navigationWarning: "This video is locked to the party. Leave the party before watching another YouTube video." }),
 
   copyInvite: async () => {
     const { identity } = get();
@@ -482,31 +494,6 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   },
 
   setDraft: (draft) => set({ draft }),
-
-  sendMessage: () => {
-    const { draft, identity, liveKit } = get();
-    const text = draft.trim();
-    if (!text || !identity) return;
-    const selfMember = get().members.find((m) => m.id === identity.selfUserId);
-    const wireMessage: ChatWireMessage = {
-      id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      text,
-      sentAt: Date.now(),
-    };
-    const entry: RoomChatMessage = {
-      id: wireMessage.id,
-      kind: "chat",
-      authorName: "You",
-      avatarId: selfMember?.avatarId ?? "1",
-      time: formatClockTime(wireMessage.sentAt),
-      text,
-    };
-    set((s) => ({
-      messages: [...s.messages, entry].slice(-MAX_CHAT_MESSAGES),
-      draft: "",
-    }));
-    liveKit?.sendChatMessage(wireMessage);
-  },
 
   toggleReactionPicker: () => set((s) => ({ showReactionPicker: !s.showReactionPicker })),
 

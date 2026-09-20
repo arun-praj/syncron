@@ -14,6 +14,9 @@ export interface PlaybackSnapshot {
   currentTime: number;
   duration: number;
   paused: boolean;
+  playbackRate: number;
+  muted: boolean;
+  volume: number;
 }
 
 export function isPlaybackSnapshotRequest(message: unknown): message is PlaybackSnapshotRequest {

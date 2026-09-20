@@ -109,6 +109,7 @@ Initial label: normalized email local part, then provider first name, then user;
 
 - `ENDED` requires `ended_at` at application level.
 - Ended rooms are immutable except safe administrative/internal metadata fixes.
+- Partial unique indexes allow only one `ACTIVE` room per creator and per current host.
 
 ### Recommended indexes
 
@@ -188,4 +189,4 @@ Account deletion behavior must be designed before production launch; implementat
 - D1 compatibility must be checked before merging migrations.
 - Tests must initialize a clean SQLite database from migrations.
 
-Active membership uniqueness is enforced by a partial unique index on (room_id,user_id) WHERE left_at IS NULL. Timestamps use epoch milliseconds in SQLite. Empty rooms preserve active memberships for five minutes, including a fresh restart recovery period. No invite tokens are stored.
+Active membership uniqueness is enforced by a partial unique index on (room_id,user_id) WHERE left_at IS NULL. Timestamps use epoch milliseconds in SQLite. Active memberships survive transient disconnects, extension/page reloads, and API restarts until explicit leave, kick, or room end; transient playback state may be lost on API restart. No invite tokens are stored.

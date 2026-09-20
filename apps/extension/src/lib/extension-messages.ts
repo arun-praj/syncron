@@ -7,6 +7,7 @@ export const ACTIVATE_YOUTUBE_SIDEBAR = "syncron:activate-youtube-sidebar" as co
 // the `externally_connectable` manifest entry — only origins listed there
 // can reach this listener at all, but the payload is still untrusted input.
 export const SYNCRON_PING = "syncron:ping" as const;
+export const SYNCRON_PREVIEW_INVITE = "syncron:preview-invite" as const;
 export const SYNCRON_JOIN_INVITE = "syncron:join-invite" as const;
 
 export interface OpenServiceTabMessage {
@@ -42,12 +43,19 @@ export interface JoinedRoomSnapshot {
   inviteUrl: string | null;
   members: JoinedRoomMemberSeed[];
   selfUserId: string;
+  initialMicrophoneEnabled?: boolean;
+  initialCameraEnabled?: boolean;
+}
+
+export interface YoutubeRoomRecovery {
+  status: "reconnecting";
 }
 
 export interface ActivateYoutubeSidebarMessage {
   type: typeof ACTIVATE_YOUTUBE_SIDEBAR;
   tabId: number;
   joinedRoom?: JoinedRoomSnapshot;
+  roomRecovery?: YoutubeRoomRecovery;
 }
 
 export interface SyncronPingMessage {
@@ -56,6 +64,13 @@ export interface SyncronPingMessage {
 
 export interface SyncronJoinInviteMessage {
   type: typeof SYNCRON_JOIN_INVITE;
+  invite: string;
+  microphoneEnabled: boolean;
+  cameraEnabled: boolean;
+}
+
+export interface SyncronPreviewInviteMessage {
+  type: typeof SYNCRON_PREVIEW_INVITE;
   invite: string;
 }
 
@@ -118,6 +133,20 @@ export function isSyncronJoinInviteMessage(
     typeof message === "object" &&
     message !== null &&
     (message as { type?: unknown }).type === SYNCRON_JOIN_INVITE &&
+    typeof (message as { invite?: unknown }).invite === "string" &&
+    (message as { invite: string }).invite.length > 0 &&
+    typeof (message as { microphoneEnabled?: unknown }).microphoneEnabled === "boolean" &&
+    typeof (message as { cameraEnabled?: unknown }).cameraEnabled === "boolean"
+  );
+}
+
+export function isSyncronPreviewInviteMessage(
+  message: unknown,
+): message is SyncronPreviewInviteMessage {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === SYNCRON_PREVIEW_INVITE &&
     typeof (message as { invite?: unknown }).invite === "string" &&
     (message as { invite: string }).invite.length > 0
   );

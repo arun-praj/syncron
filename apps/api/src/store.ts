@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import type { Database } from "../../../packages/db/src/index.js";
 import {
   memberships,
@@ -20,6 +20,14 @@ export class Store {
     if (!row) throw new DomainError("ROOM_NOT_FOUND", 404);
     return row;
   }
+  async activeOwnedRoom(userId: string) {
+    return this.db.query.rooms.findFirst({
+      where: and(
+        eq(rooms.status, "ACTIVE"),
+        or(eq(rooms.creatorUserId, userId), eq(rooms.hostUserId, userId)),
+      ),
+    });
+  }
   async publicUser(id: string) {
     const row = await this.db
       .select({
@@ -35,7 +43,7 @@ export class Store {
     if (!row[0]) throw new DomainError("USER_NOT_FOUND", 404);
     return row[0];
   }
-  async dto(id: string, navigation?: { media: MediaDestination | null; hasPlaybackState: boolean }) {
+  async dto(id: string, navigation?: { media: MediaDestination | null; hasPlaybackState: boolean; title?: string | null }) {
     const r = await this.room(id);
     const media = navigation?.media ?? (r.mediaProvider && r.mediaUrl
       ? { provider: r.mediaProvider, mediaId: r.mediaId, url: r.mediaUrl }

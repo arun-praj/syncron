@@ -9,5 +9,8 @@ export function readPagePlaybackSnapshot(): PlaybackSnapshot | null {
     currentTime: video.currentTime,
     duration: video.duration,
     paused: video.paused,
+    playbackRate: video.playbackRate,
+    muted: video.muted,
+    volume: video.volume,
   };
 }

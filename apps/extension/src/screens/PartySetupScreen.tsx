@@ -43,6 +43,8 @@ export default function PartySetupScreen({
   tabUrl,
   onBack,
   onEnterRoom,
+  onReturnToRoom,
+  activeRoom,
   readPlaybackSnapshot,
 }: {
   service: StreamingService;
@@ -51,6 +53,8 @@ export default function PartySetupScreen({
   tabUrl: string;
   onBack: () => void;
   onEnterRoom: () => void;
+  onReturnToRoom?: () => void;
+  activeRoom?: boolean;
   readPlaybackSnapshot?: () => Promise<PlaybackSnapshot | null>;
 }) {
   const liveSnapshot = usePlaybackSnapshot(
@@ -60,6 +64,7 @@ export default function PartySetupScreen({
   const detailLine = liveSnapshot
     ? `${liveSnapshot.title} (${formatPlaybackTime(liveSnapshot.currentTime)})`
     : tabTitle;
+  const canStartParty = liveSnapshot !== null;
 
   const selfUser = useAuthStore((s) => s.user);
   const enterRoom = useRoomStore((s) => s.enterRoom);
@@ -70,14 +75,27 @@ export default function PartySetupScreen({
   const [error, setError] = useState<string | null>(null);
 
   const startParty = async () => {
+    if (!canStartParty) return;
     setIsStarting(true);
     setError(null);
     try {
+      const playback = await readPlaybackSnapshot?.();
       const { room, inviteUrl } = await api.createRoom({
         name: tabTitle.slice(0, 100),
         everyoneCanControl: allowControl,
         allowMembersToShareInvite: allowShare,
         media: { provider: service.id, mediaId: null, url: tabUrl },
+        ...(playback
+          ? {
+              initialPlayback: {
+                position: playback.currentTime,
+                paused: playback.paused,
+                playbackRate: playback.playbackRate,
+                muted: playback.muted,
+                volume: playback.volume,
+              },
+            }
+          : {}),
       });
       enterRoom({
         service,
@@ -107,7 +125,7 @@ export default function PartySetupScreen({
         <button type="button" onClick={onBack} aria-label="Back to home" className="ps-back">
           <ChevronLeftIcon />
         </button>
-        <span className="ps-title">Start a watch party</span>
+        <span className="ps-title">{activeRoom ? "Room settings" : "Start a watch party"}</span>
       </div>
 
       <div className="ps-service-row">
@@ -182,10 +200,29 @@ export default function PartySetupScreen({
 
         {error && <p className="ps-error">{error}</p>}
 
-        <button type="button" className="ps-start-btn" disabled={isStarting} onClick={() => void startParty()}>
-          <PeopleIcon />
-          {isStarting ? "Starting…" : "Start watch party"}
-        </button>
+        {!activeRoom && (
+          <p className="ps-media-hint" role="status">
+            {canStartParty
+              ? "Content loaded. You can start the watch party even while it is paused."
+              : "Load a video or other media before starting a watch party."}
+          </p>
+        )}
+
+        {activeRoom ? (
+          <button type="button" className="ps-start-btn" onClick={onReturnToRoom}>
+            <PeopleIcon />
+            Return to party
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`ps-start-btn${canStartParty ? " ps-start-btn--ready" : ""}`}
+            disabled={isStarting || !canStartParty}
+            onClick={() => void startParty()}>
+            <PeopleIcon />
+            {isStarting ? "Starting…" : "Start watch party"}
+          </button>
+        )}
       </div>
     </div>
   );

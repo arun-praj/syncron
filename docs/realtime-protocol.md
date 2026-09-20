@@ -20,6 +20,13 @@ The room coordinator is authoritative.
 
 Clients are event producers and state applicators, not authorities.
 
+Authoritative playback includes the room's media destination, media position,
+paused state, playback rate, YouTube mute state, and YouTube volume. The media
+destination is locked for the lifetime of an active room; a participant must
+leave before watching another video. A newly connected or reconnected
+client applies the complete snapshot before publishing local controls; a host
+republishes a complete snapshot when a coordinator has no transient state.
+
 The server validates:
 
 - active membership,
@@ -28,9 +35,13 @@ The server validates:
 - payload schema,
 - reasonable numeric bounds.
 
+A `playback.media_change` for a different media destination is rejected and
+the sender receives the current authoritative state. Same-media snapshots are
+still accepted for reconnect/recovery compatibility.
+
 ## 4. Drift strategy
 
-Target typical drift: <= 500 ms.
+Target correction threshold: 10 ms. The client uses a temporary playback-rate correction for small drift and hard-seeks only when drift exceeds 250 ms.
 
 Suggested approach:
 
@@ -38,7 +49,7 @@ Suggested approach:
 2. When applying a playing state, project expected position using elapsed server time.
 3. Compare local media position with projected target.
 4. Small drift: optionally apply temporary playback-rate correction where adapter permits.
-5. Large drift (> ~1500 ms): hard seek.
+5. Large drift (> 250 ms): hard seek.
 
 Do not continuously hard-seek for tiny differences.
 
@@ -58,6 +69,7 @@ Use a short-lived suppression/token mechanism so a remote `seek` does not echo b
 Seek events can fire rapidly.
 
 - Debounce or coalesce noisy seeking updates.
+- Coalesce YouTube `volumechange` events before publishing audio state.
 - Emit authoritative seek at stable points such as `seeked` and optionally throttled preview updates.
 - Playback position should not be broadcast at high frequency simply to act as a clock.
 
@@ -114,4 +126,4 @@ On room end:
 
 ## Implemented recovery and limits
 
-See the [canonical API](API-schema.md#precise-realtime-rules) for heartbeat, sequence rejection, seek coalescing, single-use tickets, five-minute empty recovery, restart behavior and rate limits. All client and server payload schemas are exported by packages/protocol. The future YouTube fullscreen layout is 80% video / 20% persistent sidebar, with generic-site support conditional on the fullscreen container accepting injected children.
+See the [canonical API](API-schema.md#precise-realtime-rules) for heartbeat, sequence rejection, seek coalescing, single-use tickets, reload-safe memberships, restart behavior and rate limits. All client and server payload schemas are exported by packages/protocol. The future YouTube fullscreen layout is 80% video / 20% persistent sidebar, with generic-site support conditional on the fullscreen container accepting injected children.

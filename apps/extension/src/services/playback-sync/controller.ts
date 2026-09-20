@@ -6,12 +6,16 @@ export interface SyncedPlaybackState {
   paused: boolean;
   position: number;
   playbackRate: number;
+  muted: boolean;
+  volume: number;
   updatedAt: number;
 }
 
 export interface PlaybackSyncHandlers {
   onPlaybackState: (state: SyncedPlaybackState | null) => void;
   onConnectionChange: (connected: boolean) => void;
+  onAutoplayBlocked?: (blocked: boolean) => void;
+  onNavigationBlocked?: () => void;
   // room.member_joined/left/host_changed/kicked/ended/settings_changed etc.
   // — everything except the playback.state/no_state this controller
   // already applies itself. The caller (room-store) reacts to these.
@@ -28,6 +32,9 @@ export class PlaybackSyncController {
   private readonly socket: PlaybackSocket;
   private unsubscribeAdapter: (() => void) | null = null;
   private lastAppliedSequence = -1;
+  private authoritativeStateReady = false;
+  private authoritativeState: SyncedPlaybackState | null = null;
+  private hostSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     roomId: string,
@@ -39,13 +46,26 @@ export class PlaybackSyncController {
   ) {
     this.socket = new PlaybackSocket(roomId, getTicket, {
       onEvent: (event) => this.handleServerEvent(event),
-      onOpen: () => this.handlers.onConnectionChange(true),
-      onClose: () => this.handlers.onConnectionChange(false),
+      onOpen: () => {
+        this.lastAppliedSequence = -1;
+        this.authoritativeStateReady = false;
+        this.authoritativeState = null;
+        this.handlers.onConnectionChange(true);
+      },
+      onClose: () => {
+        this.authoritativeStateReady = false;
+        this.authoritativeState = null;
+        this.handlers.onConnectionChange(false);
+      },
     });
   }
 
   start(): void {
+    this.lastAppliedSequence = -1;
+    this.authoritativeStateReady = false;
+    this.authoritativeState = null;
     this.adapter.start();
+    this.adapter.lockToCurrentMedia();
     this.unsubscribeAdapter = this.adapter.subscribe((event) => this.handleLocalEvent(event));
     this.socket.connect();
   }
@@ -55,6 +75,8 @@ export class PlaybackSyncController {
     this.unsubscribeAdapter = null;
     this.adapter.stop();
     this.socket.close();
+    if (this.hostSnapshotTimer) clearTimeout(this.hostSnapshotTimer);
+    this.hostSnapshotTimer = null;
   }
 
   private get canControl(): boolean {
@@ -62,6 +84,21 @@ export class PlaybackSyncController {
   }
 
   private handleLocalEvent(event: LocalMediaEvent): void {
+    if (event.type === "autoplayBlocked") {
+      this.handlers.onAutoplayBlocked?.(event.blocked);
+      return;
+    }
+    if (event.type === "navigationBlocked") {
+      this.handlers.onNavigationBlocked?.();
+      if (this.authoritativeState) {
+        this.adapter.applyRemote({
+          ...this.authoritativeState,
+          serverNow: this.socket.serverNow(),
+        });
+      }
+      return;
+    }
+    if (!this.authoritativeStateReady || !this.authoritativeState) return;
     if (event.type === "buffering") {
       if (this.canControl) this.socket.buffering({ buffering: event.buffering, position: event.position });
       return;
@@ -69,7 +106,15 @@ export class PlaybackSyncController {
     // Not authorized to control playback here — the server would reject
     // it anyway (that's the real enforcement), but there's no point
     // sending events that can only ever be rejected.
-    if (!this.canControl) return;
+    if (!this.canControl) {
+      if (this.authoritativeState) {
+        this.adapter.applyRemote({
+          ...this.authoritativeState,
+          serverNow: this.socket.serverNow(),
+        });
+      }
+      return;
+    }
 
     const { snapshot } = event;
     const media = {
@@ -83,47 +128,90 @@ export class PlaybackSyncController {
     else if (event.type === "seek") this.socket.seek(media);
     else if (event.type === "ratechange") {
       this.socket.rateChange({ position: snapshot.position, playbackRate: snapshot.playbackRate });
+    } else if (event.type === "audiochange") {
+      this.socket.audioChange({
+        position: snapshot.position,
+        muted: snapshot.muted,
+        volume: snapshot.volume,
+      });
     } else if (event.type === "mediaChange") {
       this.socket.mediaChange({
         ...media,
         paused: snapshot.paused,
+        muted: snapshot.muted,
+        volume: snapshot.volume,
         metadata: snapshot.title ? { title: snapshot.title } : undefined,
       });
     }
   }
 
+  private publishHostSnapshot(attempt = 0): void {
+    if (!this.isHost || !this.authoritativeStateReady) return;
+    const snapshot = this.adapter.getSnapshot();
+    if (snapshot) {
+      this.socket.mediaChange({
+        provider: "YOUTUBE",
+        mediaId: snapshot.mediaId,
+        url: snapshot.url,
+        position: snapshot.position,
+        paused: snapshot.paused,
+        muted: snapshot.muted,
+        volume: snapshot.volume,
+        metadata: snapshot.title ? { title: snapshot.title } : undefined,
+      });
+      return;
+    }
+    if (attempt >= 20) return;
+    this.hostSnapshotTimer = setTimeout(() => this.publishHostSnapshot(attempt + 1), 250);
+  }
+
   private handleServerEvent(event: ServerEvent): void {
     if (event.type === "playback.state") {
       const { payload } = event;
-      // The server broadcasts state to every socket, including the one
-      // whose own action caused it (payload.updatedBy identifies the
-      // author) — re-applying our own just-sent action back onto the
-      // player fights in-progress local actions (e.g. an in-flight scrub)
-      // with a now-stale echo, and needlessly opens the adapter's
-      // suppression window. We already have the authoritative state
-      // locally in that case; only apply when someone else caused it.
-      if (payload.stateSequence > this.lastAppliedSequence) {
+      this.authoritativeStateReady = true;
+      if (payload.stateSequence >= this.lastAppliedSequence) {
         this.lastAppliedSequence = payload.stateSequence;
-        if (payload.updatedBy !== this.selfUserId) {
-          this.adapter.applyRemote({
-            position: payload.position,
-            paused: payload.paused,
-            playbackRate: payload.playbackRate,
-            updatedAt: payload.updatedAt,
-          });
-        }
+        this.authoritativeState = {
+          title: payload.metadata?.title,
+          paused: payload.paused,
+          position: payload.position,
+          playbackRate: payload.playbackRate,
+          muted: payload.muted,
+          volume: payload.volume,
+          updatedAt: payload.updatedAt,
+        };
+        this.adapter.lockToMedia(payload.mediaId, payload.url);
+        this.adapter.applyRemote({
+          position: payload.position,
+          paused: payload.paused,
+          playbackRate: payload.playbackRate,
+          muted: payload.muted,
+          volume: payload.volume,
+          updatedAt: payload.updatedAt,
+          serverNow: this.socket.serverNow(),
+        });
       }
       this.handlers.onPlaybackState({
         title: payload.metadata?.title,
         paused: payload.paused,
         position: payload.position,
         playbackRate: payload.playbackRate,
+        muted: payload.muted,
+        volume: payload.volume,
         updatedAt: payload.updatedAt,
       });
       return;
     }
     if (event.type === "playback.no_state") {
+      this.lastAppliedSequence = -1;
+      this.authoritativeStateReady = true;
+      this.authoritativeState = null;
       this.handlers.onPlaybackState(null);
+      this.publishHostSnapshot();
+      return;
+    }
+    if (event.type === "playback.control_rejected") {
+      if (event.payload.code === "PLAYBACK_CONTROL_FORBIDDEN") this.socket.requestSync();
       return;
     }
     if (event.type === "room.settings_changed") {

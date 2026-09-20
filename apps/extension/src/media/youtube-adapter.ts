@@ -11,37 +11,42 @@ export interface MediaSnapshot {
   paused: boolean;
   playbackRate: number;
   title: string;
+  muted: boolean;
+  volume: number;
 }
 
 export interface RemotePlaybackState {
   position: number;
   paused: boolean;
   playbackRate: number;
+  muted: boolean;
+  volume: number;
   // Server clock ms this position was authoritative at — lets a still-
   // playing state's position be projected forward instead of constantly
   // re-seeking to a slightly-stale value.
   updatedAt: number;
+  serverNow?: number;
 }
 
 export type LocalMediaEvent =
-  | { type: "play" | "pause" | "seek" | "ratechange"; snapshot: MediaSnapshot }
+  | { type: "play" | "pause" | "seek" | "ratechange" | "audiochange"; snapshot: MediaSnapshot }
   | { type: "mediaChange"; snapshot: MediaSnapshot }
-  | { type: "buffering"; buffering: boolean; position: number };
+  | { type: "navigationBlocked"; attemptedUrl: string }
+  | { type: "buffering"; buffering: boolean; position: number }
+  | { type: "autoplayBlocked"; blocked: boolean };
+
+type ControlEventType = "play" | "pause" | "seek" | "ratechange" | "audiochange";
 
 // How far local and server-projected position may drift before a running
 // video is corrected — avoids visibly jittering the playhead for normal
 // network jitter.
-const DRIFT_CORRECTION_SECONDS = 1.5;
-// How long to ignore native video events right after this adapter itself
-// changed the video, so applying remote state doesn't get re-published as
-// a local control event (see docs/extension-architecture.md section 10).
-// PlaybackSyncController no longer applies self-caused state at all (see
-// its updatedBy check), which was this window's main trigger — this is
-// now mostly covering the case where a genuinely remote play/seek takes a
-// while to actually fire its native event (e.g. buffering into an
-// unfetched position on a slow connection).
-const SUPPRESSION_WINDOW_MS = 1000;
+const DRIFT_CORRECTION_SECONDS = 0.01;
+const HARD_SEEK_DRIFT_SECONDS = 0.25;
+const MAX_RATE_CORRECTION = 0.05;
+const CORRECTION_INTERVAL_MS = 100;
+const REMOTE_EVENT_WINDOW_MS = 1000;
 const ATTACH_RETRY_MS = 500;
+const AUDIO_CHANGE_DEBOUNCE_MS = 50;
 
 function currentMediaId(): string | null {
   try {
@@ -58,25 +63,68 @@ function currentTitle(): string {
 export class YoutubeMediaAdapter {
   private video: HTMLVideoElement | null = null;
   private videoListeners: Array<[string, EventListener]> = [];
-  private suppressUntil = 0;
+  private remoteEventUntil = 0;
+  private readonly remoteEventTypes = new Set<ControlEventType>();
+  private remoteState: RemotePlaybackState | null = null;
+  private pendingRemoteState: RemotePlaybackState | null = null;
+  private remoteAnchor: { position: number; at: number } | null = null;
+  private autoplayBlocked = false;
+  private correctionTimer: ReturnType<typeof setInterval> | null = null;
+  private audioChangeTimer: ReturnType<typeof setTimeout> | null = null;
+  private frameRequest: number | null = null;
   private attachRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private lastMediaId: string | null = null;
+  private lockedMedia: { mediaId: string | null; url: string } | null = null;
   private stopped = false;
   private readonly listeners = new Set<(event: LocalMediaEvent) => void>();
   private readonly onNavigate = () => this.handleNavigation();
+  private readonly onUserInteraction = () => {
+    if (this.autoplayBlocked && this.remoteState) {
+      this.autoplayBlocked = false;
+      this.pendingRemoteState = this.remoteState;
+      this.applyPendingRemote();
+    }
+  };
+  private readonly onVisibilityChange = () => {
+    if (!document.hidden) {
+      this.applyPendingRemote();
+      this.correctDrift();
+    }
+  };
 
   start(): void {
     this.stopped = false;
     this.lastMediaId = currentMediaId();
     window.addEventListener("yt-navigate-finish", this.onNavigate);
+    document.addEventListener("pointerdown", this.onUserInteraction, true);
+    document.addEventListener("keydown", this.onUserInteraction, true);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
     this.attach();
   }
 
   stop(): void {
     this.stopped = true;
     window.removeEventListener("yt-navigate-finish", this.onNavigate);
+    document.removeEventListener("pointerdown", this.onUserInteraction, true);
+    document.removeEventListener("keydown", this.onUserInteraction, true);
+    document.removeEventListener("visibilitychange", this.onVisibilityChange);
     if (this.attachRetryTimer) clearTimeout(this.attachRetryTimer);
+    if (this.correctionTimer) clearInterval(this.correctionTimer);
+    if (this.audioChangeTimer) clearTimeout(this.audioChangeTimer);
+    if (this.frameRequest !== null) {
+      const video = this.video as (HTMLVideoElement & { cancelVideoFrameCallback?: (id: number) => void }) | null;
+      video?.cancelVideoFrameCallback?.(this.frameRequest);
+    }
+    this.correctionTimer = null;
+    this.audioChangeTimer = null;
+    this.frameRequest = null;
     this.detach();
+    this.pendingRemoteState = null;
+    this.remoteState = null;
+    this.remoteAnchor = null;
+    this.lockedMedia = null;
+    this.remoteEventTypes.clear();
+    this.autoplayBlocked = false;
     this.listeners.clear();
   }
 
@@ -95,26 +143,131 @@ export class YoutubeMediaAdapter {
       paused: video.paused,
       playbackRate: video.playbackRate,
       title: currentTitle(),
+      muted: video.muted,
+      volume: video.volume,
     };
+  }
+
+  lockToCurrentMedia(): void {
+    const snapshot = this.getSnapshot();
+    this.lockedMedia = {
+      mediaId: snapshot?.mediaId ?? currentMediaId(),
+      url: snapshot?.url ?? location.href,
+    };
+  }
+
+  lockToMedia(mediaId: string | null, url: string): void {
+    this.lockedMedia = { mediaId, url };
+    if (!this.isLockedMedia()) this.restoreLockedMedia();
   }
 
   // Applies authoritative server state without re-emitting it as a local
   // control event — the caller (playback-sync controller) decides when
   // this is warranted (a genuinely new state, or periodic drift check).
   applyRemote(state: RemotePlaybackState): void {
+    this.remoteEventTypes.clear();
+    this.remoteState = state;
+    this.pendingRemoteState = state;
+    this.remoteAnchor = {
+      position: state.paused
+        ? state.position
+        : state.position + Math.max(0, (state.serverNow ?? Date.now()) - state.updatedAt) / 1000,
+      at: performance.now(),
+    };
+    this.applyPendingRemote();
+  }
+
+  private applyPendingRemote(): void {
+    const video = this.video;
+    const state = this.pendingRemoteState;
+    if (!video || !state || Number.isNaN(video.duration)) return;
+    this.pendingRemoteState = null;
+    this.remoteEventUntil = Date.now() + REMOTE_EVENT_WINDOW_MS;
+    this.applyAudio(state);
+    this.correctDrift();
+  }
+
+  private projectedPosition(): number | null {
+    const state = this.remoteState;
+    const anchor = this.remoteAnchor;
+    if (!state || !anchor) return null;
+    return state.paused ? anchor.position : anchor.position + (performance.now() - anchor.at) / 1000;
+  }
+
+  private applyAudio(state: RemotePlaybackState): void {
     const video = this.video;
     if (!video) return;
-    this.suppressUntil = Date.now() + SUPPRESSION_WINDOW_MS;
-
-    const projected = state.paused
-      ? state.position
-      : state.position + Math.max(0, Date.now() - state.updatedAt) / 1000;
-    if (Math.abs(video.currentTime - projected) > DRIFT_CORRECTION_SECONDS) {
-      video.currentTime = projected;
+    if (video.volume !== state.volume) {
+      this.markRemoteChange("audiochange");
+      video.volume = state.volume;
     }
-    if (video.playbackRate !== state.playbackRate) video.playbackRate = state.playbackRate;
-    if (state.paused && !video.paused) video.pause();
-    else if (!state.paused && video.paused) void video.play().catch(() => undefined);
+    if (video.muted !== state.muted) {
+      this.markRemoteChange("audiochange");
+      video.muted = state.muted;
+    }
+  }
+
+  private correctDrift(): void {
+    const video = this.video;
+    const state = this.remoteState;
+    const anchor = this.remoteAnchor;
+    if (!video || !state || !anchor || Number.isNaN(video.duration)) return;
+
+    const target = this.projectedPosition();
+    if (target === null) return;
+    this.applyAudio(state);
+
+    if (state.paused) {
+      if (!video.paused) {
+        this.markRemoteChange("pause");
+        video.pause();
+      }
+      if (Math.abs(video.currentTime - target) > DRIFT_CORRECTION_SECONDS) {
+        this.markRemoteChange("seek");
+        video.currentTime = target;
+      }
+      if (video.playbackRate !== state.playbackRate) {
+        this.markRemoteChange("ratechange");
+        video.playbackRate = state.playbackRate;
+      }
+      return;
+    }
+
+    const drift = target - video.currentTime;
+    const hardSeek = Math.abs(drift) > HARD_SEEK_DRIFT_SECONDS;
+    if (hardSeek) {
+      this.markRemoteChange("seek");
+      video.currentTime = target;
+    }
+    const correction = Math.max(-MAX_RATE_CORRECTION, Math.min(MAX_RATE_CORRECTION, drift * 0.5));
+    const desiredRate = !hardSeek && Math.abs(drift) > DRIFT_CORRECTION_SECONDS
+      ? Math.max(0.25, Math.min(4, state.playbackRate + correction))
+      : state.playbackRate;
+    if (video.playbackRate !== desiredRate) {
+      this.markRemoteChange("ratechange");
+      video.playbackRate = desiredRate;
+    }
+    if (video.paused) {
+      if (this.autoplayBlocked) return;
+      this.markRemoteChange("play");
+      void video.play().then(() => {
+        if (this.autoplayBlocked) {
+          this.autoplayBlocked = false;
+          this.notify({ type: "autoplayBlocked", blocked: false });
+        }
+      }).catch(() => {
+        this.pendingRemoteState = this.remoteState;
+        if (!this.autoplayBlocked) {
+          this.autoplayBlocked = true;
+          this.notify({ type: "autoplayBlocked", blocked: true });
+        }
+      });
+    }
+  }
+
+  private markRemoteChange(type: ControlEventType): void {
+    this.remoteEventTypes.add(type);
+    this.remoteEventUntil = Date.now() + REMOTE_EVENT_WINDOW_MS;
   }
 
   private attach(): void {
@@ -134,22 +287,62 @@ export class YoutubeMediaAdapter {
     on("pause", () => this.emitControlEvent("pause"));
     on("seeked", () => this.emitControlEvent("seek"));
     on("ratechange", () => this.emitControlEvent("ratechange"));
+    on("volumechange", () => this.emitAudioChange());
     on("waiting", () => this.emitBuffering(true));
-    on("playing", () => this.emitBuffering(false));
+    on("playing", () => {
+      this.applyPendingRemote();
+      this.correctDrift();
+      this.emitBuffering(false);
+    });
+    on("loadedmetadata", () => this.applyPendingRemote());
+    on("durationchange", () => this.applyPendingRemote());
+    on("canplay", () => this.applyPendingRemote());
+    on("pointerdown", () => this.applyPendingRemote());
+    if (!video.requestVideoFrameCallback) {
+      this.correctionTimer = setInterval(() => this.correctDrift(), CORRECTION_INTERVAL_MS);
+    }
+    this.applyPendingRemote();
+    this.scheduleFrameCorrection();
   }
 
   private detach(): void {
+    if (this.frameRequest !== null) {
+      const video = this.video as (HTMLVideoElement & { cancelVideoFrameCallback?: (id: number) => void }) | null;
+      video?.cancelVideoFrameCallback?.(this.frameRequest);
+      this.frameRequest = null;
+    }
     if (this.video) {
       for (const [name, fn] of this.videoListeners) this.video.removeEventListener(name, fn);
     }
     this.videoListeners = [];
+    if (this.audioChangeTimer) clearTimeout(this.audioChangeTimer);
+    this.audioChangeTimer = null;
+    if (this.correctionTimer) clearInterval(this.correctionTimer);
+    this.correctionTimer = null;
     this.video = null;
+  }
+
+  private scheduleFrameCorrection(): void {
+    const video = this.video as (HTMLVideoElement & {
+      requestVideoFrameCallback?: (callback: () => void) => number;
+    }) | null;
+    if (!video?.requestVideoFrameCallback || this.stopped) return;
+    this.frameRequest = video.requestVideoFrameCallback(() => {
+      this.frameRequest = null;
+      this.correctDrift();
+      this.scheduleFrameCorrection();
+    });
   }
 
   private handleNavigation(): void {
     const mediaId = currentMediaId();
     if (mediaId === this.lastMediaId) return;
     this.lastMediaId = mediaId;
+    if (this.lockedMedia && !this.isLockedMedia()) {
+      this.notify({ type: "navigationBlocked", attemptedUrl: location.href });
+      this.restoreLockedMedia();
+      return;
+    }
     this.attach();
     // The new page's <video> element takes a moment to report real
     // duration/currentTime — wait a beat before snapshotting it.
@@ -159,15 +352,55 @@ export class YoutubeMediaAdapter {
     }, 300);
   }
 
-  private emitControlEvent(type: "play" | "pause" | "seek" | "ratechange"): void {
-    if (Date.now() < this.suppressUntil) return;
+  private isLockedMedia(): boolean {
+    const locked = this.lockedMedia;
+    if (!locked) return true;
+    if (locked.mediaId !== null || currentMediaId() !== null)
+      return locked.mediaId === currentMediaId();
+    return location.href === locked.url;
+  }
+
+  private restoreLockedMedia(): void {
+    const locked = this.lockedMedia;
+    if (!locked || this.isLockedMedia() || this.stopped) return;
+    window.setTimeout(() => {
+      if (!this.stopped && !this.isLockedMedia()) window.location.replace(locked.url);
+    }, 0);
+  }
+
+  private emitControlEvent(type: ControlEventType): void {
+    if (this.matchesRemoteState(type)) return;
     const snapshot = this.getSnapshot();
     if (!snapshot) return;
     this.notify({ type, snapshot });
   }
 
+  private emitAudioChange(): void {
+    if (this.audioChangeTimer) clearTimeout(this.audioChangeTimer);
+    this.audioChangeTimer = setTimeout(() => {
+      this.audioChangeTimer = null;
+      this.emitControlEvent("audiochange");
+    }, AUDIO_CHANGE_DEBOUNCE_MS);
+  }
+
+  private matchesRemoteState(type: ControlEventType): boolean {
+    const video = this.video;
+    const state = this.remoteState;
+    const target = this.projectedPosition();
+    if (!video || !state || target === null || !this.remoteEventTypes.has(type) || Date.now() > this.remoteEventUntil) return false;
+    const matches = type === "play" || type === "pause"
+      ? video.paused === state.paused
+      : type === "ratechange"
+        ? Math.abs(video.playbackRate - state.playbackRate) <= MAX_RATE_CORRECTION
+        : type === "audiochange"
+          ? video.muted === state.muted && video.volume === state.volume
+          : Math.abs(video.currentTime - target) <= HARD_SEEK_DRIFT_SECONDS;
+    if (matches) this.remoteEventTypes.delete(type);
+    return matches;
+  }
+
   private emitBuffering(buffering: boolean): void {
-    if (Date.now() < this.suppressUntil) return;
+    if (Date.now() < this.remoteEventUntil) return;
     const video = this.video;
     if (!video) return;
     this.notify({ type: "buffering", buffering, position: video.currentTime });

@@ -40,6 +40,9 @@ export class PlaybackSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private closedByCaller = false;
+  private initialSyncPending = false;
+  private serverClockOffsetMs = 0;
+  private hasServerClockOffset = false;
   private readonly onVisible = () => {
     if (!document.hidden) this.catchUp();
   };
@@ -97,8 +100,10 @@ export class PlaybackSocket {
     ws.addEventListener("open", () => {
       this.sequence = 0;
       this.reconnectAttempt = 0;
+      this.initialSyncPending = true;
       this.startPing();
       this.handlers.onOpen?.();
+      this.enqueue("client.ping", { clientTime: Date.now() });
     });
 
     ws.addEventListener("message", (event) => {
@@ -110,7 +115,13 @@ export class PlaybackSocket {
         return;
       }
       const result = serverEvent.safeParse(parsed);
-      if (result.success) this.handlers.onEvent(result.data);
+      if (result.success) {
+        this.observeServerTime(result.data.serverTime);
+        if (result.data.type === "server.pong") {
+          this.observeServerPong(result.data.payload.clientTime, result.data.payload.serverTime);
+        }
+        this.handlers.onEvent(result.data);
+      }
     });
 
     ws.addEventListener("close", () => {
@@ -144,7 +155,28 @@ export class PlaybackSocket {
     this.stopPing();
     this.pingTimer = setInterval(() => {
       this.enqueue("client.ping", { clientTime: Date.now() });
+      this.requestSync();
     }, PING_INTERVAL_MS);
+  }
+
+  private observeServerTime(serverTime: number): void {
+    if (this.hasServerClockOffset) return;
+    this.serverClockOffsetMs = serverTime - Date.now();
+    this.hasServerClockOffset = true;
+  }
+
+  private observeServerPong(clientTime: number, serverTime: number): void {
+    const receivedAt = Date.now();
+    const roundTrip = Math.max(0, receivedAt - clientTime);
+    const sample = serverTime - (clientTime + roundTrip / 2);
+    this.serverClockOffsetMs = this.hasServerClockOffset
+      ? this.serverClockOffsetMs * 0.8 + sample * 0.2
+      : sample;
+    this.hasServerClockOffset = true;
+    if (this.initialSyncPending) {
+      this.initialSyncPending = false;
+      this.requestSync();
+    }
   }
 
   private stopPing(): void {
@@ -172,6 +204,10 @@ export class PlaybackSocket {
     this.enqueue("playback.sync_request", {});
   }
 
+  serverNow(): number {
+    return Date.now() + this.serverClockOffsetMs;
+  }
+
   play(media: { provider: "YOUTUBE"; mediaId: string | null; url: string; position: number }): void {
     this.enqueue("playback.play", media);
   }
@@ -188,12 +224,18 @@ export class PlaybackSocket {
     this.enqueue("playback.rate_change", payload);
   }
 
+  audioChange(payload: { position: number; muted: boolean; volume: number }): void {
+    this.enqueue("playback.audio_change", payload);
+  }
+
   mediaChange(payload: {
     provider: "YOUTUBE";
     mediaId: string | null;
     url: string;
     position: number;
     paused: boolean;
+    muted: boolean;
+    volume: number;
     metadata?: { title?: string };
   }): void {
     this.enqueue("playback.media_change", payload);

@@ -24,7 +24,7 @@ services:
       retries: 12
     stop_grace_period: 10s
   livekit:
-    image: livekit/livekit-server:v1.9.11
+    image: livekit/livekit-server:v1.13.7
     command: ["--config", "/etc/livekit.yaml"]
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET}"

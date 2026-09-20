@@ -191,13 +191,16 @@ test("development allows extension CORS origins while production restricts them"
 test("GET /join always keeps the install-the-extension fallback, and only embeds a real extension ID when configured", async () => {
   const withoutId = await setup();
   const withoutIdHtml = await (await withoutId.request("/join")).text();
-  expect(withoutIdHtml).toContain("Install the Syncron extension");
+  expect(withoutIdHtml).toContain("Install or enable the Syncron extension");
   expect(withoutIdHtml).toContain('var EXTENSION_ID = "";');
 
   const withId = await setup({ EXTENSION_ID: "abcdefghijklmnopabcdefghijklmnop" });
   const withIdHtml = await (await withId.request("/join")).text();
-  expect(withIdHtml).toContain("Install the Syncron extension");
+  expect(withIdHtml).toContain("Install or enable the Syncron extension");
   expect(withIdHtml).toContain('var EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop";');
+  expect(withIdHtml).toContain("syncron:preview-invite");
+  expect(withIdHtml).toContain("history.replaceState");
+  expect(withIdHtml).toContain("location.replace(response.destination)");
 });
 
 const playback = {
@@ -206,7 +209,11 @@ const playback = {
   url: "https://youtube.com/watch?v=abc",
   position: 10,
 };
-const roomMedia = { provider: playback.provider, mediaId: playback.mediaId, url: playback.url };
+const roomMedia = {
+  provider: "YOUTUBE",
+  mediaId: "abc",
+  url: "https://youtube.com/watch?v=abc",
+} as const;
 const event = (type: string, payload: unknown, sequence = 1) => ({
   type,
   payload,
@@ -409,6 +416,8 @@ test("REST auth, invite rotation, host checks, profile labels, LiveKit grants an
   const a = await s.login();
   s.advance(61000);
   const b = await s.login("alice@other.com");
+  s.advance(61000);
+  const c = await s.login("alice@third.com");
   expect((await s.request("/api/v1/me")).status).toBe(401);
   expect(
     (await s.request("/api/v1/me", { username: "alice" }, b.token, "PATCH"))
@@ -418,6 +427,25 @@ test("REST auth, invite rotation, host checks, profile labels, LiveKit grants an
     await s.request("/api/v1/rooms", { name: "Movie", media: roomMedia }, a.token)
   ).json();
   const id = created.room.id;
+  const previewResponse = await s.request(
+    "/api/v1/rooms/preview",
+    { invite: new URL(created.inviteUrl).hash.slice(8) },
+    b.token,
+  );
+  expect(previewResponse.status).toBe(200);
+  expect(await previewResponse.json()).toMatchObject({
+    preview: {
+      name: "Movie",
+      title: "Movie",
+      media: roomMedia,
+      participantCount: 1,
+      maxParticipants: 25,
+      everyoneCanControl: true,
+      allowMembersToShareInvite: false,
+      host: { id: a.id },
+    },
+  });
+  expect((await s.store.active(id)).length).toBe(1);
   expect(created.room.allowMembersToShareInvite).toBe(false);
   expect((await s.store.room(id)).allowMembersToShareInvite).toBe(false);
   const invite = new URL(created.inviteUrl).hash.slice(8);
@@ -434,7 +462,7 @@ test("REST auth, invite rotation, host checks, profile labels, LiveKit grants an
     await s.request(
       "/api/v1/rooms",
       { media: roomMedia, allowMembersToShareInvite: true },
-      a.token,
+      c.token,
     )
   ).json();
   expect(shared.room.allowMembersToShareInvite).toBe(true);
@@ -487,6 +515,9 @@ test("REST auth, invite rotation, host checks, profile labels, LiveKit grants an
     (await s.request("/api/v1/rooms/join", { invite }, b.token)).status,
   ).toBe(403);
   expect(
+    (await s.request("/api/v1/rooms/preview", { invite }, b.token)).status,
+  ).toBe(403);
+  expect(
     (await s.request(`/api/v1/rooms/${id}/kick`, { userId: b.id }, a.token))
       .status,
   ).toBe(204);
@@ -532,18 +563,37 @@ test("coordinator handles permissions, sequence, seek coalescing, socket replace
     cb = await coord.connect(b, y);
   expect(y.events.some((e) => e.type === "playback.no_state")).toBe(true);
   await coord.receive(a, ca, event("playback.play", playback));
+  await coord.receive(
+    a,
+    ca,
+    event(
+      "playback.media_change",
+      {
+        provider: "YOUTUBE",
+        mediaId: "different-video",
+        url: "https://youtube.com/watch?v=different-video",
+        position: 0,
+        paused: true,
+        muted: false,
+        volume: 1,
+      },
+      2,
+    ),
+  );
+  expect(x.events.at(-1)?.type).toBe("playback.state");
+  expect(x.events.at(-1)?.payload.url).toBe(playback.url);
   await coord.settings(false);
   await coord.receive(b, cb, event("playback.pause", playback));
   expect(y.events.at(-1)?.payload.code).toBe("PLAYBACK_CONTROL_FORBIDDEN");
   await coord.receive(
     a,
     ca,
-    event("playback.seek", { ...playback, position: 20 }, 2),
+    event("playback.seek", { ...playback, position: 20 }, 3),
   );
   await coord.receive(
     a,
     ca,
-    event("playback.seek", { ...playback, position: 30 }, 3),
+    event("playback.seek", { ...playback, position: 30 }, 4),
   );
   s.advance(51);
   await coord.tick();
@@ -565,9 +615,46 @@ test("coordinator handles permissions, sequence, seek coalescing, socket replace
   s.advance(1001);
   await coord.tick();
   expect((await s.store.room(id)).hostUserId).toBe(b);
-  expect(await s.store.member(id, a)).toBeUndefined();
+  expect(await s.store.member(id, a)).toBeDefined();
   const sequences = y.events.map((e) => e.serverSequence);
   expect(sequences.every((v, i) => !i || v > sequences[i - 1]!)).toBe(true);
+});
+
+test("initial playback and audio state are authoritative for joining clients", async () => {
+  const s = await setup();
+  const a = await s.seed("alice");
+  const b = await s.seed("bobby");
+  const id = await s.store.create(a, undefined, { media: roomMedia });
+  const coord = new MemoryRoomCoordinator(id, s.store, s.media, s.now);
+  await coord.initializeMedia(roomMedia, a, {
+    position: 37.25,
+    paused: true,
+    playbackRate: 1.5,
+    muted: true,
+    volume: 0.25,
+  });
+  await coord.join(b);
+  const client = socket();
+  await coord.connect(b, client);
+  expect(client.events.find((e) => e.type === "playback.state")?.payload).toMatchObject({
+    position: 37.25,
+    paused: true,
+    playbackRate: 1.5,
+    muted: true,
+    volume: 0.25,
+  });
+  const host = socket();
+  const hostConnection = await coord.connect(a, host);
+  await coord.receive(
+    a,
+    hostConnection,
+    event("playback.audio_change", {
+      position: 38,
+      muted: false,
+      volume: 0.8,
+    }),
+  );
+  expect(client.events.at(-1)?.payload).toMatchObject({ muted: false, volume: 0.8 });
 });
 
 test("capacity is 25 and concurrent coordinator joins cannot overbook", async () => {
@@ -587,7 +674,7 @@ test("capacity is 25 and concurrent coordinator joins cannot overbook", async ()
   expect((await s.store.member(id, host))!.id).toBe(first);
 });
 
-test("empty room retains memberships and state; restart loses playback; expiry is irreversible", async () => {
+test("disconnects retain active memberships; restart loses playback without ending the room", async () => {
   const s = await setup();
   const a = await s.seed();
   const id = await s.store.create(a);
@@ -608,15 +695,11 @@ test("empty room retains memberships and state; restart loses playback; expiry i
   const z = socket();
   await restart.run(id, (c) => c.connect(a, z));
   expect(z.events.some((e) => e.type === "playback.no_state")).toBe(true);
-  s.advance(30001);
+  s.advance(600000);
   await restart.tick();
-  s.advance(300001);
-  await restart.tick();
-  expect((await s.store.room(id)).status).toBe("ENDED");
-  expect((await s.db.select().from(memberships))[0]?.leaveReason).toBe(
-    "ROOM_ENDED",
-  );
-  await expect(restart.run(id, (c) => c.join(a))).rejects.toThrow("ROOM_ENDED");
+  expect((await s.store.room(id)).status).toBe("ACTIVE");
+  expect(await s.store.member(id, a)).toBeDefined();
+  await restart.run(id, (c) => c.join(a));
 });
 
 test("controls enforce finite payload bounds, heartbeat and burst rate", async () => {
@@ -628,6 +711,16 @@ test("controls enforce finite payload bounds, heartbeat and burst rate", async (
   expect(
     clientEvent.safeParse(
       event("playback.rate_change", { position: 0, playbackRate: 4.1 }),
+    ).success,
+  ).toBe(false);
+  expect(
+    clientEvent.safeParse(
+      event("playback.audio_change", { position: 0, muted: true, volume: 0.5 }),
+    ).success,
+  ).toBe(true);
+  expect(
+    clientEvent.safeParse(
+      event("playback.audio_change", { position: 0, muted: true, volume: 1.1 }),
     ).success,
   ).toBe(false);
   expect(
@@ -669,7 +762,22 @@ test("real WebSockets exchange state; tickets are scoped, expiring and single us
   const a = await s.login();
   s.advance(61000);
   const b = await s.login("bob@example.com");
-  const created = await (await s.request("/api/v1/rooms", { media: roomMedia }, a.token)).json();
+  const created = await (
+    await s.request(
+      "/api/v1/rooms",
+      {
+        media: roomMedia,
+        initialPlayback: {
+          position: 12.5,
+          paused: true,
+          playbackRate: 1,
+          muted: true,
+          volume: 0.4,
+        },
+      },
+      a.token,
+    )
+  ).json();
   const id = created.room.id;
   await s.request(
     "/api/v1/rooms/join",
@@ -708,6 +816,12 @@ test("real WebSockets exchange state; tickets are scoped, expiring and single us
   await vi.waitFor(() =>
     expect(y.messages.some((m) => m.type === "playback.state")).toBe(true),
   );
+  expect(y.messages.find((m) => m.type === "playback.state")?.payload).toMatchObject({
+    position: 12.5,
+    paused: true,
+    muted: true,
+    volume: 0.4,
+  });
   x.ws.send(JSON.stringify(event("playback.play", playback)));
   await vi.waitFor(() =>
     expect(y.messages.some((m) => m.type === "playback.state")).toBe(true),
@@ -805,7 +919,10 @@ test("wrong-room invites, nonmember tokens, request validation and OTP send quot
   s.advance(61000);
   const b = await s.login("bob@example.com");
   const one = await (await s.request("/api/v1/rooms", { media: roomMedia }, a.token)).json();
-  const two = await (await s.request("/api/v1/rooms", { media: roomMedia }, a.token)).json();
+  const repeated = await s.request("/api/v1/rooms", { media: roomMedia }, a.token);
+  expect(repeated.status).toBe(200);
+  expect((await repeated.json()).room.id).toBe(one.room.id);
+  const two = await (await s.request("/api/v1/rooms", { media: roomMedia }, b.token)).json();
   const invite = new URL(one.inviteUrl).hash.slice(8);
   expect(
     (await s.request(`/api/v1/rooms/${two.room.id}/join`, { invite }, b.token))
@@ -849,4 +966,3 @@ test("wrong-room invites, nonmember tokens, request validation and OTP send quot
     ).status,
   ).toBe(429);
 });
-

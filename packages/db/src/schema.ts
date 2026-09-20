@@ -117,6 +117,12 @@ export const rooms = sqliteTable(
     index("room_host").on(t.hostUserId),
     index("room_creator").on(t.creatorUserId),
     index("room_status_created").on(t.status, t.createdAt),
+    uniqueIndex("active_room_creator")
+      .on(t.creatorUserId)
+      .where(sql`${t.status} = 'ACTIVE'`),
+    uniqueIndex("active_room_host")
+      .on(t.hostUserId)
+      .where(sql`${t.status} = 'ACTIVE'`),
   ],
 );
 export const memberships = sqliteTable(

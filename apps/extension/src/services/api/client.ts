@@ -2,6 +2,8 @@ import {
   createRoom as createRoomRequest,
   createRoomResponse,
   errorResponse,
+  invitePreview as invitePreviewRequest,
+  invitePreviewResponse,
   inviteResponse,
   joinRoom as joinRoomRequest,
   joinRoomResponse,
@@ -13,6 +15,7 @@ import {
   onboarding as onboardingRequest,
   onboardingResponse,
   profileUpdate as profileUpdateRequest,
+  roomResponse,
   ticketResponse,
 } from "@syncron/protocol";
 import { z } from "zod";
@@ -97,8 +100,17 @@ export const api = {
       body: JSON.stringify(joinRoomRequest.parse({ invite })),
     }),
 
+  previewInvite: (invite: string) =>
+    request("/api/v1/rooms/preview", invitePreviewResponse, {
+      method: "POST",
+      body: JSON.stringify(invitePreviewRequest.parse({ invite })),
+    }),
+
   getRoomMembers: (roomId: string) =>
     request(`/api/v1/rooms/${roomId}/members`, membersResponse, { method: "GET" }),
+
+  getRoom: (roomId: string) =>
+    request(`/api/v1/rooms/${roomId}`, roomResponse, { method: "GET" }),
 
   getInvite: (roomId: string) =>
     request(`/api/v1/rooms/${roomId}/invite`, inviteResponse, { method: "GET" }),

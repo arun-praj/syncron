@@ -10,18 +10,22 @@ The home screen shows YouTube, Spotify, Netflix and generic HTML5 entry points. 
 
 ## Invites and media
 
-The host shares `https://<api-origin>/join#invite=<token>`. The content script on the handoff page removes the fragment immediately, keeps the token in transient extension memory, and sends it to the background service. The API validates it and returns the party's current media destination. The extension navigates the designated tab to that webpage, then attaches the session UI. It never appends the invite token to a provider URL.
+The host shares `https://<api-origin>/join#invite=<token>`. The handoff page removes the fragment immediately, keeps the token only in page memory, and asks the extension for a read-only preview. The responsive pre-join lobby shows a static YouTube thumbnail, title, host, participant count, playback-control and invite-sharing settings, and mic/camera preference toggles. Both device preferences default off and do not request permission before joining. On Join, the extension validates the invite, creates membership once, stores the room snapshot against the existing invite tab, and returns the validated YouTube destination; the page uses `location.replace` so no second tab is opened. It never appends the invite token to a provider URL.
 
-New joins follow the party's current media. Later authorized media changes automatically navigate the designated party tab. Browser autoplay restrictions may require a user click. Full, ended, rotated, invalid and unavailable media states have visible error actions.
+New joins follow the party's current media. While a room is active, the YouTube
+media destination is locked for every participant. Navigation to another video
+is blocked with a warning that the participant must leave the party first;
+browser autoplay restrictions may still require a user click. Full, ended,
+rotated, invalid and unavailable media states have visible error actions.
 
 ## Session UI
 
-The attached panel shows the current media, invite sharing, participants, host status, playback controls, camera/microphone controls, LiveKit video tiles and ephemeral LiveKit chat. The host can kick, transfer host, end the party, change playback permissions, enable member invite sharing, and allow or prevent a member's microphone publishing. A member can fetch the current invite only when the host enables invite sharing. Host microphone restriction cannot remotely turn a microphone on.
+The attached panel shows the current media, invite sharing, participants, host status, playback controls, camera/microphone controls, LiveKit video tiles and ephemeral LiveKit chat. The host can kick, transfer host, end the party, change playback permissions, enable member invite sharing, and allow or prevent a member's microphone publishing. A member can fetch the current invite only when the host enables invite sharing. Host microphone restriction cannot remotely turn a microphone on. Every participant joins with their local LiveKit microphone disabled and must explicitly unmute themselves.
 
 The YouTube panel can be minimized to a small tab-local handle and preserves its React state while the target tab remains loaded. It keeps one playback socket and one LiveKit participant through transitions. YouTube fullscreen uses an 80/20 video/sidebar layout. Generic media uses a Syncron fullscreen wrapper when the page accepts injected children; otherwise native fullscreen remains available with the sidebar limitation shown.
 
 ## Browser rules
 
-Use browser runtime APIs for navigation, messaging and extension URLs. Keep page DOM access in content scripts and keep API/LiveKit secrets on the server. Request camera or microphone access only after a user action. Reconnect with bounded backoff and request authoritative playback state before publishing local corrections. Do not persist chat or invite tokens.
+Use browser runtime APIs for navigation, messaging and extension URLs. Keep page DOM access in content scripts and keep API/LiveKit secrets on the server. Request camera or microphone access only after a user action. Reconnect with bounded backoff and request authoritative playback state before publishing local corrections. Synchronize YouTube position, pause state, playback rate, mute state and volume; do not persist chat, invite tokens or playback state.
 
 Full frontend acceptance requires Chrome and Firefox runs for signup/onboarding, invite handoff, YouTube navigation, generic media sync, party moderation, fullscreen, minimize/float, reconnect, autoplay denial and permission denial. Spotify and Netflix expose experimental or unsupported states until dedicated adapters exist.

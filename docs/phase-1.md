@@ -233,8 +233,8 @@ State includes:
 
 ### Synchronization targets
 
-- Typical drift target: <= 500 ms.
-- Hard correction threshold: > 1500 ms.
+- Correction threshold: 10 ms, with temporary rate correction for small drift.
+- Hard correction threshold: > 250 ms.
 
 Use soft correction where practical before hard seeking.
 

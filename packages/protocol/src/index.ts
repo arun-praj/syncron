@@ -14,6 +14,9 @@ export const mediaDestination = z.strictObject({
   mediaId: z.string().max(512).nullable(),
   url: z.url().max(2048).refine((v) => /^https?:\/\//.test(v)),
 });
+const position = z.number().finite().nonnegative();
+const rate = z.number().min(0.25).max(4);
+const volume = z.number().finite().min(0).max(1);
 export const profileUpdate = z
   .strictObject({
     username: username.optional(),
@@ -31,17 +34,27 @@ export const createRoom = z.strictObject({
   everyoneCanControl: z.boolean().default(true),
   allowMembersToShareInvite: z.boolean().default(false),
   media: mediaDestination,
+  initialPlayback: z
+    .strictObject({
+      position,
+      paused: z.boolean(),
+      playbackRate: rate,
+      muted: z.boolean(),
+      volume,
+    })
+    .optional(),
 });
 export const joinRoom = z.strictObject({ invite: z.string().min(1).max(1024) });
+export const invitePreview = joinRoom;
 export const settings = z.strictObject({ everyoneCanControl: z.boolean() });
 export const targetUser = z.strictObject({ userId: id });
 export const inviteClaims = z.strictObject({
   roomId,
   inviteVersion: z.number().int().positive(),
 });
-const position = z.number().finite().nonnegative();
-const rate = z.number().min(0.25).max(4);
 const media = { ...mediaDestination.shape, position };
+const audio = { muted: z.boolean(), volume };
+const legacyAudio = { muted: z.boolean().default(false), volume: volume.default(1) };
 const envelope = {
   requestId: id,
   sequence: z.number().int().nonnegative(),
@@ -63,11 +76,16 @@ export const clientEvent = z.discriminatedUnion("type", [
     "playback.media_change",
     z.strictObject({
       ...media,
+      ...legacyAudio,
       paused: z.boolean(),
       metadata: z
         .strictObject({ title: z.string().max(200).optional() })
         .optional(),
     }),
+  ),
+  event(
+    "playback.audio_change",
+    z.strictObject({ position, ...audio }),
   ),
   event(
     "playback.buffering",
@@ -76,6 +94,7 @@ export const clientEvent = z.discriminatedUnion("type", [
 ]);
 export const playbackState = z.object({
   ...media,
+  ...audio,
   paused: z.boolean(),
   playbackRate: rate,
   updatedAt: z.number(),
@@ -90,6 +109,18 @@ export const publicUser = z.object({
   avatarId: avatarId.nullable(),
   displayName: z.string(),
   image: z.string().nullable(),
+});
+export const invitePreviewResponse = z.object({
+  preview: z.object({
+    name: z.string().nullable(),
+    title: z.string(),
+    host: publicUser,
+    media: mediaDestination.nullable(),
+    participantCount: z.number().int().nonnegative().max(25),
+    maxParticipants: z.literal(25),
+    everyoneCanControl: z.boolean(),
+    allowMembersToShareInvite: z.boolean(),
+  }),
 });
 export const room = z.object({
   id: roomId,

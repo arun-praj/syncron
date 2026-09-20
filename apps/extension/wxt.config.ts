@@ -13,8 +13,12 @@ export default defineConfig({
     name: "Syncron",
     description:
       "Watch parties in sync — shared playback, live chat, and calls without leaving YouTube.",
-    permissions: ["storage"],
+    permissions: ["storage", "scripting"],
     host_permissions: [
+      "http://localhost:8000/*",
+      "http://127.0.0.1:8000/*",
+      "http://localhost:7880/*",
+      "http://127.0.0.1:7880/*",
       "https://www.youtube.com/*",
       "https://www.spotify.com/*",
       "https://www.netflix.com/*",

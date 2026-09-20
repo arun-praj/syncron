@@ -12,7 +12,8 @@ Better Auth is mounted at /api/auth/*. Its authenticated `POST /api/auth/change-
 | PATCH /me | {username?,displayName?,avatarId?}, at least one | {user} | self |
 | POST /me/onboarding | {username,avatarId,displayName?} | {user} | verified user without/with onboarding |
 | GET /users/:userId | — | {user} public profile | authenticated |
-| POST /rooms | {name?,everyoneCanControl,allowMembersToShareInvite,media:{provider,mediaId,url}} | 201 {room,inviteUrl} | authenticated and onboarded |
+| POST /rooms | {name?,everyoneCanControl,allowMembersToShareInvite,media:{provider,mediaId,url},initialPlayback?:{position,paused,playbackRate,muted,volume}} | 201 {room,inviteUrl}; 200 with the existing active room when the caller already owns one | authenticated and onboarded |
+| POST /rooms/preview | {invite} | {preview:{name,title,host,media,participantCount,maxParticipants,everyoneCanControl,allowMembersToShareInvite}}; does not create membership | authenticated and onboarded |
 | GET /rooms/:roomId | — | {room} | historical member |
 | GET /rooms/:roomId/invite | — | {inviteUrl} | active host, or active member when `allowMembersToShareInvite=true` |
 | POST /rooms/:roomId/invite/rotate | {} | {inviteUrl} | active host |
@@ -28,9 +29,11 @@ Better Auth is mounted at /api/auth/*. Its authenticated `POST /api/auth/change-
 | POST /rooms/:roomId/livekit-token | {} | {url,token,roomName,participantIdentity} | active member |
 | PATCH /rooms/:roomId/members/:userId/microphone | {allowed:boolean} | {allowed} | active host |
 
+Only one `ACTIVE` room may be owned by a user as creator or host. Repeating `POST /rooms` while that room is active is idempotent and returns that room instead of creating another one.
+
 Room: id, name, status, everyoneCanControl, allowMembersToShareInvite, maxParticipants (25), host (PublicUser), createdAt, endedAt, media (destination or null), hasPlaybackState. PublicUser: id, username, avatarId, displayName, image. /me additionally includes email, emailVerified, createdAt, onboardingCompletedAt. Member: user, role, joinedAt, connected, microphoneAllowed. Timestamps are ISO UTC.
 
-Invites are HMAC-SHA256 signed roomId/inviteVersion claims, in APP_URL/join#invite=<token>. No codes, access modes or passwords. Initial join requires an invite; existing active memberships reconnect using tickets without an invite. Rotation increments persisted version and revokes old invites. Invite tokens are never persisted or logged.
+Invites are HMAC-SHA256 signed roomId/inviteVersion claims, in APP_URL/join#invite=<token>. No codes, access modes or passwords. The preview validates the signed invite, room status, onboarding and current media without creating membership. Initial join requires an invite; existing active memberships reconnect using tickets without an invite. Rotation increments persisted version and revokes old invites. Invite tokens are never persisted or logged.
 
 Errors use {error:{code,message,requestId,details:null}}: 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 FORBIDDEN, INVITE_INVALID, NOT_ROOM_MEMBER, NOT_ROOM_HOST, CANNOT_KICK_SELF; 404 ROOM_NOT_FOUND, USER_NOT_FOUND; 409 ONBOARDING_REQUIRED, ROOM_ENDED, ROOM_FULL, TARGET_NOT_IN_ROOM, INVALID_HOST_TRANSFER; 429 RATE_LIMITED; 503 LIVEKIT_TOKEN_UNAVAILABLE, LIVEKIT_MODERATION_PENDING; 500 INTERNAL_ERROR.
 
@@ -76,6 +79,8 @@ Clients must ignore unknown optional fields for forward compatibility.
   "position": 1842.412,
   "paused": false,
   "playbackRate": 1,
+  "muted": false,
+  "volume": 1,
   "updatedAt": 1789378100180,
   "updatedBy": "usr_...",
   "stateSequence": 103
@@ -149,6 +154,8 @@ Same payload fields as `playback.play`.
   "url": "https://www.youtube.com/watch?v=...",
   "position": 0,
   "paused": true,
+  "muted": false,
+  "volume": 1,
   "metadata": {
     "title": "Optional display title"
   }
@@ -156,6 +163,21 @@ Same payload fields as `playback.play`.
 ```
 
 `metadata` is optional and must remain small. Do not trust it for security decisions.
+The media destination is immutable while the room is active. A media-change
+event for a different destination is rejected and the sender is resynchronized
+to the current `playback.state`; same-media snapshots remain valid for recovery.
+
+### `playback.audio_change`
+
+```json
+{
+  "position": 2011.82,
+  "muted": true,
+  "volume": 0.35
+}
+```
+
+Mute and volume are synchronized playback-audio state; LiveKit microphone state remains independent. Authorization is the same as other playback controls.
 
 ### `playback.buffering`
 
@@ -288,8 +310,8 @@ Sent to target before disconnect when possible.
 
 ## Precise realtime rules
 
-Client sequence is strictly increasing per socket; stale values produce STALE_SEQUENCE. All events require active membership. Controls require host or everyoneCanControl. Invalid payloads produce protocol.error VALIDATION_ERROR; controls over 30/sec sustained, burst 60 produce RATE_LIMITED. Send client.ping at least every 15 seconds; 30 seconds without an event closes the socket. Replacing a socket cannot disconnect its replacement. Seek broadcasts are coalesced to the latest accepted state over 50ms; another control flushes the pending seek first. Initial connection automatically receives state/no_state. Playback positions must be finite and nonnegative, rates 0.25–4, http(s) URLs at most 2048 characters, titles at most 200. Buffering is informational and returns playback.buffering with userId, buffering and position. Rate changes before initial media produce NO_PLAYBACK_STATE.
+Client sequence is strictly increasing per socket; stale values produce STALE_SEQUENCE. All events require active membership. Controls require host or everyoneCanControl. Invalid payloads produce protocol.error VALIDATION_ERROR; controls over 30/sec sustained, burst 60 produce RATE_LIMITED. Send client.ping at least every 15 seconds; 30 seconds without an event closes the socket. Replacing a socket cannot disconnect its replacement. Seek broadcasts are coalesced to the latest accepted state over 50ms; another control flushes the pending seek first. Initial connection automatically receives state/no_state. Playback positions must be finite and nonnegative, rates 0.25–4, volumes 0–1, http(s) URLs at most 2048 characters, titles at most 200. Buffering is informational and returns playback.buffering with userId, buffering and position. Rate and audio changes before initial media produce NO_PLAYBACK_STATE. A host receiving playback.no_state after a coordinator restart republishes its current full playback snapshot; members wait for that state.
 
-Disconnected members reserve capacity for 30 seconds. An entirely empty room instead retains memberships and playback for five minutes. Earliest connected participant (user ID tie-break) succeeds a host absent for 30 seconds. Explicit host leave transfers immediately when possible. Restart gives persisted active rooms a fresh five-minute empty recovery interval with no playback state. Ending closes memberships with ROOM_ENDED and destroys transient state.
+Disconnected members retain their active membership and reserve capacity until they explicitly leave, are kicked, or the room ends. Playback and presence remain transient; a server restart may lose playback state, but it does not end the persisted active room. Earliest connected participant (user ID tie-break) succeeds a host absent for 30 seconds. Explicit host leave transfers immediately when possible. Ending closes memberships with ROOM_ENDED and destroys transient state.
 
 LiveKit tokens expire in 600 seconds; roomName=sync_<roomId>, identity=Better Auth user ID. Grants: join, subscribe, data, camera and microphone publishing. Kick removes the participant; end deletes the LiveKit room. Chat travels only through LiveKit.

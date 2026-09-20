@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { RoomContext } from "@livekit/components-react";
 
 import { ChevronLeftIcon } from "@/components/icons";
 import { InviteHintOverlay } from "@/features/room/InviteHintOverlay";
@@ -29,7 +30,12 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   const toggleSelfVideo = useRoomStore((s) => s.toggleSelfVideo);
   const leaveRoom = useRoomStore((s) => s.leaveRoom);
   const playbackState = useRoomStore((s) => s.playbackState);
+  const autoplayBlocked = useRoomStore((s) => s.autoplayBlocked);
+  const navigationWarning = useRoomStore((s) => s.navigationWarning);
+  const dismissNavigationWarning = useRoomStore((s) => s.dismissNavigationWarning);
   const forceLeaveReason = useRoomStore((s) => s.forceLeaveReason);
+  const liveKit = useRoomStore((s) => s.liveKit);
+  const liveKitReady = useRoomStore((s) => s.liveKitReady);
 
   const inviteButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -53,7 +59,7 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   return (
     <div className="room-screen">
       <div className="header">
-        <button type="button" onClick={onBack} aria-label="Back to party setup" className="back">
+        <button type="button" onClick={onBack} aria-label="Open room settings" title="Room settings" className="back">
           <ChevronLeftIcon />
         </button>
         <span className="title">Watch party</span>
@@ -113,9 +119,30 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
 
       {showInviteHint && canShowInvite && <InviteHintOverlay targetRef={inviteButtonRef} />}
 
-      <MemberGrid />
+      {autoplayBlocked && (
+        <div className="sync-banner" role="status">
+          <span>Click the video once to allow synchronized playback.</span>
+          <button type="button" onClick={() => void document.querySelector<HTMLVideoElement>("video")?.play()}>
+            Resume
+          </button>
+        </div>
+      )}
 
-      <RoomChat />
+      {navigationWarning && (
+        <div className="sync-banner" role="alert">
+          <span>{navigationWarning}</span>
+          <button type="button" onClick={dismissNavigationWarning}>Dismiss</button>
+        </div>
+      )}
+
+      {liveKitReady && liveKit?.currentRoom ? (
+        <RoomContext.Provider value={liveKit.currentRoom}>
+          <MemberGrid />
+          <RoomChat />
+        </RoomContext.Provider>
+      ) : (
+        <MemberGrid />
+      )}
     </div>
   );
 }

@@ -31,8 +31,18 @@ type Presence = {
 export interface RoomCoordinator {
   authorize(userId: string, host?: boolean): Promise<void>;
   join(userId: string): Promise<unknown>;
-  initializeMedia(media: MediaDestination, userId: string): Promise<void>;
-  navigation(): Promise<{ media: MediaDestination | null; hasPlaybackState: boolean }>;
+  initializeMedia(
+    media: MediaDestination,
+    userId: string,
+    initialPlayback?: {
+      position: number;
+      paused: boolean;
+      playbackRate: number;
+      muted: boolean;
+      volume: number;
+    },
+  ): Promise<void>;
+  navigation(): Promise<{ media: MediaDestination | null; hasPlaybackState: boolean; title: string | null }>;
   connect(userId: string, socket: Socket): Promise<string>;
   disconnect(userId: string, connectionId: string): Promise<void>;
   receive(userId: string, connectionId: string, input: unknown): Promise<void>;
@@ -49,7 +59,6 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
   private state: PlaybackState | null = null;
   private serverSequence = 0;
   private stateSequence = 0;
-  private emptySince: number | null;
   private hostAbsentSince: number | null;
   private pendingSeek = false;
   private seekDue = 0;
@@ -64,7 +73,6 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
     private media: MediaService,
     private now = () => Date.now(),
   ) {
-    this.emptySince = now();
     this.hostAbsentSince = now();
     this.limiter = new MemoryRateLimiter(now);
   }
@@ -108,14 +116,38 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       microphoneAllowed: membership.microphoneAllowed,
     };
   }
-  async initializeMedia(media: MediaDestination, userId: string) {
+  async initializeMedia(
+    media: MediaDestination,
+    userId: string,
+    initialPlayback = {
+      position: 0,
+      paused: true,
+      playbackRate: 1,
+      muted: false,
+      volume: 1,
+    },
+  ) {
     if (this.state) return;
-    this.state = { ...media, position: 0, paused: true, playbackRate: 1, updatedAt: this.now(), updatedBy: userId, stateSequence: ++this.stateSequence };
+    this.state = {
+      ...media,
+      ...initialPlayback,
+      updatedAt: this.now(),
+      updatedBy: userId,
+      stateSequence: ++this.stateSequence,
+    };
   }
   async navigation() {
-    if (this.state) return { media: { provider: this.state.provider, mediaId: this.state.mediaId, url: this.state.url }, hasPlaybackState: true };
+    if (this.state) return {
+      media: { provider: this.state.provider, mediaId: this.state.mediaId, url: this.state.url },
+      hasPlaybackState: true,
+      title: this.state.metadata?.title ?? null,
+    };
     const room = await this.store.room(this.id);
-    return { media: room.mediaProvider && room.mediaUrl ? { provider: room.mediaProvider, mediaId: room.mediaId, url: room.mediaUrl } : null, hasPlaybackState: false };
+    return {
+      media: room.mediaProvider && room.mediaUrl ? { provider: room.mediaProvider, mediaId: room.mediaId, url: room.mediaUrl } : null,
+      hasPlaybackState: false,
+      title: room.name ?? null,
+    };
   }
   private send(type: string, payload: unknown, socket?: Socket) {
     const data = JSON.stringify(
@@ -166,7 +198,6 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       sequence: -1,
     });
     previous?.socket?.close(4001, "Connection replaced");
-    this.emptySince = null;
     if ((await this.store.room(this.id)).hostUserId === userId)
       this.hostAbsentSince = null;
     this.send(
@@ -186,8 +217,6 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
     p.disconnectedAt = this.now();
     if ((await this.store.room(this.id)).hostUserId === userId)
       this.hostAbsentSince = this.now();
-    if (!this.connected().length && this.emptySince === null)
-      this.emptySince = this.now();
   }
   private connected() {
     return [...this.presence.entries()]
@@ -238,8 +267,6 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       const next = this.connected()[0];
       if (next) await this.transfer(next[0]);
     }
-    if (!this.connected().length && this.emptySince === null)
-      this.emptySince = this.now();
     await this.removeMedia(userId);
   }
   async settings(value: boolean) {
@@ -316,7 +343,7 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       );
       return;
     }
-    if (e.type === "playback.rate_change" && !this.state) {
+    if ((e.type === "playback.rate_change" || e.type === "playback.audio_change") && !this.state) {
       this.send(
         "playback.control_rejected",
         { requestId: e.requestId, code: "NO_PLAYBACK_STATE" },
@@ -331,11 +358,27 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       old?.provider === e.payload.provider &&
       old.mediaId === e.payload.mediaId &&
       old.url === e.payload.url;
+    if (e.type === "playback.media_change" && (!old ? room.hostUserId !== userId : !sameMedia)) {
+      if (old) this.sync(p.socket);
+      else this.send(
+        "playback.control_rejected",
+        { requestId: e.requestId, code: "NO_PLAYBACK_STATE" },
+        p.socket,
+      );
+      return;
+    }
+    const nextAudio = {
+      muted: "muted" in e.payload ? e.payload.muted : old?.muted ?? false,
+      volume: "volume" in e.payload ? e.payload.volume : old?.volume ?? 1,
+    };
     if (e.type === "playback.rate_change")
       this.state = { ...old!, ...e.payload };
+    else if (e.type === "playback.audio_change")
+      this.state = { ...old!, ...e.payload, ...nextAudio };
     else
       this.state = {
         ...e.payload,
+        ...nextAudio,
         paused:
           e.type === "playback.media_change"
             ? e.payload.paused
@@ -369,28 +412,10 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
         await this.disconnect(u, p.connectionId!);
       }
     if (this.pendingSeek && now >= this.seekDue) this.flush();
-    if (this.emptySince !== null) {
-      if (now - this.emptySince >= 300000) await this.end("EMPTY_TIMEOUT");
-      return;
-    }
     if (this.hostAbsentSince !== null && now - this.hostAbsentSince >= 30000) {
       const next = this.connected()[0];
       if (next) await this.transfer(next[0]);
     }
-    for (const [u, p] of this.presence)
-      if (
-        !p.socket &&
-        p.disconnectedAt !== undefined &&
-        now - p.disconnectedAt >= 30000
-      ) {
-        await this.store.close(this.id, u, "DISCONNECTED_TIMEOUT");
-        this.presence.delete(u);
-        this.send("room.member_left", {
-          userId: u,
-          reason: "DISCONNECTED_TIMEOUT",
-        });
-        await this.removeMedia(u);
-      }
   }
   private async removeMedia(userId: string) {
     this.cleanupPending.add(userId);
