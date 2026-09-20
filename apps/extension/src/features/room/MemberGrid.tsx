@@ -72,7 +72,10 @@ function MemberFloaters({ members, selfUserId }: { members: RoomMember[]; selfUs
           const label = formatMemberLabel(member, selfUserId);
           return (
             <div key={member.id} className="member-floater">
-              <div className={`member-floater-avatar${member.videoTrack ? " member-floater-avatar--live" : ""}`}>
+              <div
+                className={`member-floater-avatar${member.videoTrack ? " member-floater-avatar--live" : ""}${
+                  member.isSpeaking ? " member-floater-avatar--speaking" : ""
+                }`}>
                 <MemberMedia member={member} label={label} className="member-floater-media" />
                 {member.isHost && <span className="member-floater-ring" aria-label="Host" />}
                 <MuteBadge member={member} label={label} className="member-floater-mute" />

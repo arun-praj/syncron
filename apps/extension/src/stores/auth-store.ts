@@ -173,7 +173,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Reached verification without a password in memory (e.g. popup was
       // closed and reopened mid-flow) — send the user back to sign in
       // normally now that their email is verified.
-      set({ isSubmitting: false, status: "signed-out", pendingEmail: null });
+      set({
+        isSubmitting: false,
+        status: "signed-out",
+        pendingEmail: null,
+        info: "Email verified. Return to the extension popup to sign in.",
+      });
       return;
     }
     const { error: signInError } = await authClient.signIn.email({ email, password });

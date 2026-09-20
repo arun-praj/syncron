@@ -10,7 +10,7 @@ async function closeTab() {
 }
 
 export default function App() {
-  const { status, hydrate, backToSignIn } = useAuthStore();
+  const { status, hydrate, backToSignIn, info } = useAuthStore();
 
   useEffect(() => {
     void hydrate();
@@ -28,9 +28,11 @@ export default function App() {
   } else if (status === "signed-out") {
     content = (
       <div className="flex min-h-screen flex-col items-center px-[22px] pb-[18px] pt-[26px] text-center">
-        <h1 className="mb-2 text-h1 font-bold text-ink-primary">Open Syncron</h1>
+        <h1 className="mb-2 text-h1 font-bold text-ink-primary">
+          {info ? "Email verified" : "Open Syncron"}
+        </h1>
         <p className="text-subtext text-ink-secondary">
-          Use the extension popup to sign in and continue.
+          {info ?? "Use the extension popup to sign in and continue."}
         </p>
         <button
           type="button"

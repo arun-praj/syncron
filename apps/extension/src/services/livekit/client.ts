@@ -12,6 +12,7 @@ export interface LiveKitHandlers {
   // <audio autoPlay>) — being "subscribed" alone does not play sound.
   onVideoTrackChanged: (participantId: string, mediaTrack: MediaStreamTrack | null) => void;
   onAudioTrackChanged: (participantId: string, mediaTrack: MediaStreamTrack | null) => void;
+  onActiveSpeakersChanged: (participantIds: string[]) => void;
   onParticipantLeft?: (participantId: string) => void;
 }
 
@@ -59,6 +60,10 @@ export class LiveKitSession {
     room.on(RoomEvent.TrackUnmuted, (publication, participant) => emitForKind(publication.kind, participant));
     room.on(RoomEvent.LocalTrackPublished, (publication) => emitForKind(publication.kind, room.localParticipant));
     room.on(RoomEvent.LocalTrackUnpublished, (publication) => emitForKind(publication.kind, room.localParticipant));
+    const emitActiveSpeakers = (participants: Participant[]) => {
+      this.handlers.onActiveSpeakersChanged(participants.map((participant) => participant.identity));
+    };
+    room.on(RoomEvent.ActiveSpeakersChanged, emitActiveSpeakers);
     room.on(RoomEvent.ParticipantDisconnected, (participant) => {
       this.handlers.onParticipantLeft?.(participant.identity);
     });
@@ -68,6 +73,7 @@ export class LiveKitSession {
       console.error("[Syncron] LiveKit room.connect() failed", e);
       throw e;
     }
+    emitActiveSpeakers(room.activeSpeakers);
   }
 
   async disconnect(): Promise<void> {

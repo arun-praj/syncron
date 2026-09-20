@@ -13,17 +13,6 @@ import SignupScreen from "@/screens/SignupScreen";
 import { watchStoredSession } from "@/services/auth/client";
 import { useAuthStore } from "@/stores/auth-store";
 
-async function openVerificationTab() {
-  const url = browser.runtime.getURL("/verify.html");
-  const existing = (await browser.tabs.query({ url }))[0];
-  if (existing?.id !== undefined) {
-    await browser.tabs.update(existing.id, { active: true });
-    if (existing.windowId !== undefined) await browser.windows.update(existing.windowId, { focused: true });
-    return;
-  }
-  await browser.tabs.create({ url });
-}
-
 async function openService(service: StreamingService) {
   await browser.runtime.sendMessage({
     type: OPEN_SERVICE_TAB,
@@ -141,4 +130,14 @@ export default function App() {
       </div>
     </div>
   );
+}
+async function openVerificationTab() {
+  const url = browser.runtime.getURL("/verify.html");
+  const existing = (await browser.tabs.query({ url }))[0];
+  if (existing?.id !== undefined) {
+    await browser.tabs.update(existing.id, { active: true });
+    if (existing.windowId !== undefined) await browser.windows.update(existing.windowId, { focused: true });
+    return;
+  }
+  await browser.tabs.create({ url });
 }

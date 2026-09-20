@@ -17,6 +17,7 @@ export interface RoomMember {
   avatarId: string;
   isHost: boolean;
   muted: boolean;
+  isSpeaking: boolean;
   synced: boolean;
   // Live camera feed from LiveKit; null means "no active unmuted camera",
   // so tiles should fall back to the avatar image.
@@ -197,7 +198,14 @@ export const useRoomStore = create<RoomState>((set, get) => ({
 
     set({
       identity,
-      members: identity.members.map((m) => ({ ...m, muted: true, synced: true, videoTrack: null, audioTrack: null })),
+      members: identity.members.map((m) => ({
+        ...m,
+        muted: true,
+        isSpeaking: false,
+        synced: true,
+        videoTrack: null,
+        audioTrack: null,
+      })),
       messages: [],
       draft: "",
       isPeerTyping: false,
@@ -281,6 +289,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
           avatarId: member.user.avatarId ?? "1",
           isHost: member.role === "HOST",
           muted: true,
+          isSpeaking: false,
           synced: true,
           videoTrack: null,
           audioTrack: null,
@@ -357,15 +366,28 @@ export const useRoomStore = create<RoomState>((set, get) => ({
         if (!stillCurrent()) return;
         set((s) => ({
           members: s.members.map((m) =>
-            m.id === participantId ? { ...m, audioTrack: mediaTrack, muted: !mediaTrack } : m,
+            m.id === participantId
+              ? { ...m, audioTrack: mediaTrack, muted: !mediaTrack, isSpeaking: mediaTrack ? m.isSpeaking : false }
+              : m,
           ),
+        }));
+      },
+      onActiveSpeakersChanged: (participantIds) => {
+        if (!stillCurrent()) return;
+        set((s) => ({
+          members: s.members.map((m) => ({
+            ...m,
+            isSpeaking: participantIds.includes(m.id),
+          })),
         }));
       },
       onParticipantLeft: (participantId) => {
         if (!stillCurrent()) return;
         set((s) => ({
           members: s.members.map((m) =>
-            m.id === participantId ? { ...m, videoTrack: null, audioTrack: null, muted: true } : m,
+            m.id === participantId
+              ? { ...m, videoTrack: null, audioTrack: null, muted: true, isSpeaking: false }
+              : m,
           ),
         }));
       },
@@ -425,6 +447,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
             avatarId: joined.user.avatarId ?? "1",
             isHost: joined.role === "HOST",
             muted: true,
+            isSpeaking: false,
             synced: true,
             videoTrack: null,
             audioTrack: null,
