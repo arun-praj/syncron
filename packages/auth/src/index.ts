@@ -13,6 +13,47 @@ import {
   type RateLimiter,
 } from "../../shared/src/index.js";
 export type Mail = { email: string; otp: string; type: string };
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>\"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]!);
+}
+
+function otpMessage(mail: Mail): { subject: string; text: string; html: string } {
+  const code = escapeHtml(mail.otp);
+  const isPasswordReset = mail.type.toLowerCase().includes("reset");
+  const subject = isPasswordReset
+    ? "Your Syncron password reset code"
+    : "Your Syncron verification code";
+  const heading = isPasswordReset ? "Reset your password" : "Verify your email";
+  const text = [
+    `${subject}:`,
+    mail.otp,
+    "",
+    "This code expires in 5 minutes. If you did not request it, you can ignore this email.",
+    "Do not share this code with anyone.",
+  ].join("\n");
+  const html = `<!doctype html>
+<html lang="en"><body style="margin:0;background:#f5faff;color:#404040;font-family:Arial,Helvetica,sans-serif;">
+  <div style="padding:32px 16px;">
+    <div style="background:#ffffff;border:1px solid #e5e5e5;border-radius:12px;margin:0 auto;max-width:520px;padding:32px;">
+      <div style="color:#1e90ff;font-size:20px;font-weight:700;letter-spacing:-.2px;">Syncron</div>
+      <h1 style="color:#0a0a0a;font-size:24px;line-height:32px;margin:28px 0 12px;">${heading}</h1>
+      <p style="font-size:16px;line-height:24px;margin:0 0 24px;">Enter this code in Syncron to continue:</p>
+      <div style="background:#f5faff;border:1px solid #b9ddff;border-radius:8px;color:#0a0a0a;font-size:32px;font-weight:700;letter-spacing:8px;line-height:48px;padding:8px;text-align:center;">${code}</div>
+      <p style="color:#737373;font-size:14px;line-height:21px;margin:24px 0 0;">This code expires in 5 minutes. Do not share it with anyone.</p>
+      <p style="color:#737373;font-size:14px;line-height:21px;margin:12px 0 0;">If you did not request this email, you can safely ignore it.</p>
+    </div>
+    <p style="color:#737373;font-size:12px;line-height:18px;margin:16px auto 0;max-width:520px;text-align:center;">This is an automated message from Syncron.</p>
+  </div>
+</body></html>`;
+  return { subject, text, html };
+}
+
 export function googleProfile(profile: { email_verified?: boolean }) {
   if (profile.email_verified !== true)
     throw new APIError("FORBIDDEN", {
@@ -61,11 +102,13 @@ export function mailTransport(c: Config) {
   return {
     verify: () => withFallback((transport) => transport.verify()),
     send: async (m: Mail) => {
+      const message = otpMessage(m);
       await withFallback((transport, from) => transport.sendMail({
         from,
+        subject: message.subject,
+        text: message.text,
+        html: message.html,
         to: m.email,
-        subject: `Syncron ${m.type} code`,
-        text: `Your Syncron code is ${m.otp}. It expires in five minutes.`,
       }));
     },
   };

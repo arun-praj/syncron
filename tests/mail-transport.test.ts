@@ -50,6 +50,12 @@ describe("mail transport", () => {
     expect(generic.sendMail).toHaveBeenCalledOnce();
     expect(gmail.verify).toHaveBeenCalledOnce();
     expect(gmail.sendMail).toHaveBeenCalledWith(expect.objectContaining({ from: "gmail@example.com" }));
+    expect(gmail.sendMail).toHaveBeenCalledWith(expect.objectContaining({
+      subject: "Your Syncron verification code",
+      text: expect.stringContaining("123456"),
+      html: expect.stringContaining("#1e90ff"),
+    }));
+    expect(gmail.sendMail.mock.calls[0]![0].html).not.toContain("http://");
     expect(mocks.createTransport).toHaveBeenNthCalledWith(1, expect.objectContaining({
       host: "smtp-relay.brevo.com",
       auth: { user: "brevo-user", pass: "brevo-password" },
