@@ -1019,6 +1019,28 @@ test("configuration rejects partial SMTP, OAuth and weak/shared secrets", () => 
       SMTP_SENDER: "sender@example.com",
     }),
   ).toMatchObject({ SMTP_USERNAME: "brevo-user", SMTP_PASSWORD: "brevo-password" });
+  expect(
+    config({
+      ...env,
+      SMTP_HOST: "smtp-relay.brevo.com",
+      SMTP_PORT: "587",
+      SMTP_SENDER: "Syncron <sender@example.com>",
+    }).SMTP_SENDER,
+  ).toBe("Syncron <sender@example.com>");
+  expect(() => config({
+    ...env,
+    SMTP_HOST: "mailpit",
+    SMTP_PORT: "1025",
+    SMTP_SENDER: "Syncron <sender@example.com>\r\nBcc: attacker@example.com",
+  })).toThrow();
+  expect(() => config({
+    ...env,
+    GMAIL_HOST: "smtp.gmail.com",
+    GMAIL_PORT: "587",
+    GMAIL_USERNAME: "user",
+    GMAIL_APP_PASSWORD: "app-password",
+    GMAIL_SENDER: "Syncron <sender@example.com>\n",
+  })).toThrow();
   expect(() => config({ ...env, GOOGLE_CLIENT_ID: "id" })).toThrow();
   expect(() =>
     config({ ...env, INVITE_SECRET: env.BETTER_AUTH_SECRET }),

@@ -3,6 +3,12 @@ const secret = z
   .string()
   .min(32)
   .refine((v) => !v.includes("replace-me"), "Replace placeholder secrets");
+const sender = z.string().refine((value) => {
+  if (/[\r\n]/.test(value)) return false;
+  const trimmed = value.trim();
+  const displayName = trimmed.match(/^([^<>]+?)\s*<([^<>]+)>$/);
+  return z.email().safeParse(displayName?.[2] ?? trimmed).success;
+}, "Invalid SMTP sender");
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("production"),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(8000),
@@ -28,12 +34,12 @@ const schema = z.object({
   GMAIL_PORT: z.coerce.number().int().min(1).max(65535).optional(),
   GMAIL_USERNAME: z.string().optional(),
   GMAIL_APP_PASSWORD: z.string().optional(),
-  GMAIL_SENDER: z.email().optional(),
+  GMAIL_SENDER: sender.optional(),
   SMTP_HOST: z.string().default("localhost"),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(1025),
   SMTP_USERNAME: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
-  SMTP_SENDER: z.email().default("syncron@localhost.test"),
+  SMTP_SENDER: sender.default("syncron@localhost.test"),
   TRUSTED_ORIGINS: z.string().default("http://localhost:8000"),
 });
 export function config(env: Record<string, string | undefined> = process.env) {
