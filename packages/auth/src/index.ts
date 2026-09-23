@@ -5,7 +5,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import nodemailer from "nodemailer";
 import type { Database } from "../../db/src/index.js";
 import * as tables from "../../db/src/schema.js";
-import type { Config } from "../../config/src/index.js";
+import { trustedOrigins, type Config } from "../../config/src/index.js";
 import { initialUsername } from "../../validation/src/index.js";
 import {
   MemoryRateLimiter,
@@ -21,32 +21,56 @@ export function googleProfile(profile: { email_verified?: boolean }) {
   return { emailVerified: true };
 }
 export function mailTransport(c: Config) {
-  const transport = nodemailer.createTransport({
-    connectionTimeout: 5000,
-    greetingTimeout: 5000,
-    socketTimeout: 5000,
-    ...(c.GMAIL_HOST
-      ? {
-          host: c.GMAIL_HOST,
-          port: c.GMAIL_PORT,
-          secure: c.GMAIL_PORT === 465,
-          requireTLS: c.GMAIL_PORT !== 465,
-          auth: { user: c.GMAIL_USERNAME, pass: c.GMAIL_APP_PASSWORD },
-        }
-      : { host: c.SMTP_HOST, port: c.SMTP_PORT, secure: false }),
-  });
+  const genericConfigured = c.SMTP_USERNAME !== undefined;
+  const gmailConfigured = c.GMAIL_HOST !== undefined;
+  const gmailPrimary = gmailConfigured && !genericConfigured;
+  const generic = !gmailPrimary
+    ? nodemailer.createTransport({
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 5000,
+        host: c.SMTP_HOST,
+        port: c.SMTP_PORT,
+        secure: c.SMTP_PORT === 465,
+        ...(genericConfigured
+          ? { auth: { user: c.SMTP_USERNAME, pass: c.SMTP_PASSWORD } }
+          : {}),
+      })
+    : undefined;
+  const gmail = gmailConfigured
+    ? nodemailer.createTransport({
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 5000,
+        host: c.GMAIL_HOST,
+        port: c.GMAIL_PORT,
+        secure: c.GMAIL_PORT === 465,
+        requireTLS: c.GMAIL_PORT !== 465,
+        auth: { user: c.GMAIL_USERNAME, pass: c.GMAIL_APP_PASSWORD },
+      })
+    : undefined;
+  const primary = generic ?? gmail!;
+  const fallback = generic && gmail ? gmail : undefined;
+  const primaryFrom = generic ? c.SMTP_SENDER : c.GMAIL_SENDER!;
+  const fallbackFrom = fallback ? c.GMAIL_SENDER! : undefined;
+  const withFallback = <T>(work: (transport: typeof primary, from: string) => Promise<T>) =>
+    work(primary, primaryFrom).catch((error) =>
+      fallback && fallbackFrom ? work(fallback, fallbackFrom) : Promise.reject(error),
+    );
+
   return {
-    verify: () => transport.verify(),
+    verify: () => withFallback((transport) => transport.verify()),
     send: async (m: Mail) => {
-      await transport.sendMail({
-        from: c.GMAIL_SENDER ?? c.SMTP_SENDER,
+      await withFallback((transport, from) => transport.sendMail({
+        from,
         to: m.email,
         subject: `Syncron ${m.type} code`,
         text: `Your Syncron code is ${m.otp}. It expires in five minutes.`,
-      });
+      }));
     },
   };
 }
+
 export function createAuth(
   db: Database,
   c: Config,
@@ -60,7 +84,7 @@ export function createAuth(
     trustedOrigins:
       c.NODE_ENV === "development"
         ? ["*"]
-        : c.TRUSTED_ORIGINS.split(",").map((v) => v.trim()),
+        : trustedOrigins(c),
     database: drizzleAdapter(db, { provider: "sqlite", schema: tables }),
     emailAndPassword: {
       enabled: true,

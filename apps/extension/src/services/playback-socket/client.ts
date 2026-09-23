@@ -3,7 +3,7 @@
 
 import { serverEvent, type ClientEvent, type ServerEvent } from "@syncron/protocol";
 
-import { WS_BASE_URL } from "@/services/api/client";
+import { ApiError, WS_BASE_URL } from "@/services/api/client";
 
 export type { ClientEvent, ServerEvent };
 
@@ -25,6 +25,7 @@ export interface PlaybackSocketHandlers {
   onEvent: (event: ServerEvent) => void;
   onOpen?: () => void;
   onClose?: () => void;
+  onTerminal?: (reason: string) => void;
 }
 
 function requestId(): string {
@@ -68,8 +69,10 @@ export class PlaybackSocket {
       this.reconnectTimer = null;
     }
     this.stopPing();
-    this.ws?.close(1000, "Client closed");
+    const ws = this.ws;
     this.ws = null;
+    ws?.close(1000, "Client closed");
+    this.handlers.onClose?.();
   }
 
   // Sent immediately when the tab regains visibility, so a backgrounded
@@ -87,7 +90,12 @@ export class PlaybackSocket {
     let ticket: string;
     try {
       ticket = await this.getTicket();
-    } catch {
+    } catch (error) {
+      const reason = terminalTicketReason(error);
+      if (reason) {
+        this.terminate(reason);
+        return;
+      }
       this.scheduleReconnect();
       return;
     }
@@ -99,6 +107,7 @@ export class PlaybackSocket {
     this.ws = ws;
 
     ws.addEventListener("open", () => {
+      if (this.ws !== ws || this.closedByCaller) return;
       this.sequence = 0;
       this.reconnectAttempt = 0;
       this.initialSyncPending = true;
@@ -111,6 +120,7 @@ export class PlaybackSocket {
     });
 
     ws.addEventListener("message", (event) => {
+      if (this.ws !== ws || this.closedByCaller) return;
       if (typeof event.data !== "string") return;
       let parsed: unknown;
       try {
@@ -128,14 +138,37 @@ export class PlaybackSocket {
       }
     });
 
-    ws.addEventListener("close", () => {
+    ws.addEventListener("close", (event) => {
+      if (this.ws !== ws) return;
       this.stopPing();
-      if (this.ws === ws) this.ws = null;
+      this.ws = null;
       this.handlers.onClose?.();
+      const reason = terminalCloseReason(event.code);
+      if (reason) {
+        this.terminate(reason);
+        return;
+      }
       if (!this.closedByCaller) this.scheduleReconnect();
     });
 
-    ws.addEventListener("error", () => ws.close());
+    ws.addEventListener("error", () => {
+      if (this.ws === ws && !this.closedByCaller) ws.close();
+    });
+  }
+
+  private terminate(reason: string): void {
+    if (this.closedByCaller) return;
+    this.closedByCaller = true;
+    document.removeEventListener("visibilitychange", this.onVisible);
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.stopPing();
+    const ws = this.ws;
+    this.ws = null;
+    if (ws && ws.readyState !== WebSocket.CLOSED) ws.close(1000, "Terminal room state");
+    this.handlers.onTerminal?.(reason);
   }
 
   private scheduleReconnect(): void {
@@ -221,7 +254,7 @@ export class PlaybackSocket {
     this.enqueue("playback.pause", media);
   }
 
-  seek(media: { provider: "YOUTUBE"; mediaId: string | null; url: string; position: number }): void {
+  seek(media: { provider: "YOUTUBE"; mediaId: string | null; url: string; position: number; paused?: boolean }): void {
     this.enqueue("playback.seek", media);
   }
 
@@ -248,5 +281,37 @@ export class PlaybackSocket {
 
   buffering(payload: { buffering: boolean; position: number }): void {
     this.enqueue("playback.buffering", payload);
+  }
+}
+
+function terminalTicketReason(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  switch (error.status) {
+    case 401:
+    case 403:
+      return "Your party session is no longer valid.";
+    case 404:
+      return "This party is no longer available.";
+    case 409:
+      return "You are no longer a member of this party.";
+    default:
+      return null;
+  }
+}
+
+function terminalCloseReason(code: number): string | null {
+  switch (code) {
+    case 4001:
+      return "Your playback connection was replaced by another session.";
+    case 4003:
+      return "You are no longer a member of this party.";
+    case 4004:
+      return "The host ended the party.";
+    case 4008:
+      return "Playback was stopped because the connection sent too many messages.";
+    case 1009:
+      return "Playback was stopped because the connection sent an invalid message.";
+    default:
+      return null;
   }
 }

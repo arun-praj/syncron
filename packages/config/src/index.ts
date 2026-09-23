@@ -31,6 +31,8 @@ const schema = z.object({
   GMAIL_SENDER: z.email().optional(),
   SMTP_HOST: z.string().default("localhost"),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(1025),
+  SMTP_USERNAME: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
   SMTP_SENDER: z.email().default("syncron@localhost.test"),
   TRUSTED_ORIGINS: z.string().default("http://localhost:8000"),
 });
@@ -56,6 +58,11 @@ export function config(env: Record<string, string | undefined> = process.env) {
   const smtp = [env.SMTP_HOST, env.SMTP_PORT, env.SMTP_SENDER].filter(Boolean);
   if (smtp.length && smtp.length !== 3)
     throw new Error("Set SMTP_HOST, SMTP_PORT and SMTP_SENDER together");
+  const smtpCredentials = [c.SMTP_USERNAME, c.SMTP_PASSWORD].filter(
+    (value) => value !== undefined,
+  );
+  if (smtpCredentials.length === 1)
+    throw new Error("Set SMTP_USERNAME and SMTP_PASSWORD together");
   if (
     new Set([c.INVITE_SECRET, c.BETTER_AUTH_SECRET, c.LIVEKIT_API_SECRET])
       .size !== 3
@@ -75,3 +82,10 @@ export function config(env: Record<string, string | undefined> = process.env) {
   return c;
 }
 export type Config = ReturnType<typeof config>;
+
+export function trustedOrigins(c: Config): string[] {
+  const origins = c.TRUSTED_ORIGINS.split(",").map((v) => v.trim());
+  return c.EXTENSION_ID
+    ? [...origins, `chrome-extension://${c.EXTENSION_ID}`]
+    : origins;
+}

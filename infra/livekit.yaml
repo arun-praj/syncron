@@ -7,7 +7,7 @@ rtc:
   use_external_ip: false
   # The browser connects through the host's published Docker ports. Advertising
   # the container address makes the RTC session fail after signaling succeeds.
-  node_ip: 127.0.0.1
+  node_ip: 192.168.41.235
 room:
   max_participants: 25
 logging:

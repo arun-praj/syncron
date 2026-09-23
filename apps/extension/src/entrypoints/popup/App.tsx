@@ -146,13 +146,3 @@ export default function App() {
     </div>
   );
 }
-async function openVerificationTab() {
-  const url = browser.runtime.getURL("/verify.html");
-  const existing = (await browser.tabs.query({ url }))[0];
-  if (existing?.id !== undefined) {
-    await browser.tabs.update(existing.id, { active: true });
-    if (existing.windowId !== undefined) await browser.windows.update(existing.windowId, { focused: true });
-    return;
-  }
-  await browser.tabs.create({ url });
-}

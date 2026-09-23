@@ -4,10 +4,35 @@ import {
   clientEvent,
   serverEvent,
   mediaDestination,
+  youtubeMediaId,
   type PlaybackState,
 } from "../../../packages/protocol/src/index.js";
 import type { z } from "zod";
 type MediaDestination = z.infer<typeof mediaDestination>;
+
+function sameMediaDestination(a: MediaDestination, b: MediaDestination) {
+  if (a.provider !== b.provider) return false;
+  if (a.provider === "YOUTUBE") {
+    const aId = youtubeMediaId(a.url);
+    const bId = youtubeMediaId(b.url);
+    return aId !== null && aId === bId &&
+      (a.mediaId === null || a.mediaId === aId) &&
+      (b.mediaId === null || b.mediaId === bId);
+  }
+  return a.mediaId === b.mediaId && a.url === b.url;
+}
+
+function isActiveHostConflict(error: unknown) {
+  return error instanceof Error &&
+    error.message.includes("UNIQUE constraint failed: rooms.host_user_id");
+}
+
+const descriptorBearingEvents = new Set([
+  "playback.play",
+  "playback.pause",
+  "playback.seek",
+  "playback.media_change",
+]);
 import {
   DomainError,
   MemoryRateLimiter,
@@ -219,10 +244,16 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
         ([a, x], [b, y]) => x.connectedAt - y.connectedAt || a.localeCompare(b),
       );
   }
-  private selectNextHost(): string | null {
-    const candidates = this.connected();
+  private async selectNextHost(excluded = new Set<string>()): Promise<string | null> {
+    const candidates = [] as string[];
+    for (const [userId] of this.connected()) {
+      if (excluded.has(userId)) continue;
+      if (!(await this.store.member(this.id, userId))) continue;
+      if (await this.store.activeOwnedRoom(userId)) continue;
+      candidates.push(userId);
+    }
     if (candidates.length === 0) return null;
-    return candidates[Math.floor(Math.random() * candidates.length)]![0];
+    return candidates[Math.floor(Math.random() * candidates.length)]!;
   }
   async members() {
     const r = await this.store.room(this.id);
@@ -242,10 +273,39 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       !(await this.store.member(this.id, userId))
     )
       throw new DomainError("INVALID_HOST_TRANSFER", 409);
-    await this.store.host(this.id, userId);
+    const ownedRoom = await this.store.activeOwnedRoom(userId);
+    if (ownedRoom && ownedRoom.id !== this.id)
+      throw new DomainError("INVALID_HOST_TRANSFER", 409);
+    try {
+      await this.store.host(this.id, userId);
+    } catch (error) {
+      if (isActiveHostConflict(error))
+        throw new DomainError("INVALID_HOST_TRANSFER", 409);
+      throw error;
+    }
     this.send("room.host_changed", {
       host: await this.store.publicUser(userId),
     });
+  }
+  private async transferOrEnd() {
+    const excluded = new Set<string>();
+    while (true) {
+      const next = await this.selectNextHost(excluded);
+      if (!next) {
+        await this.end("EMPTY_TIMEOUT");
+        return;
+      }
+      try {
+        await this.transfer(next);
+        return;
+      } catch (error) {
+        if (error instanceof DomainError && error.code === "INVALID_HOST_TRANSFER") {
+          excluded.add(next);
+          continue;
+        }
+        throw error;
+      }
+    }
   }
   async leave(userId: string, kicked = false, options: { disband?: boolean; transferTo?: string } = {}) {
     if (!(await this.store.member(this.id, userId))) return;
@@ -272,11 +332,7 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       userId,
       reason: kicked ? "KICKED" : "LEFT",
     });
-    if (wasHost && !options.transferTo) {
-      const next = this.selectNextHost();
-      if (next) await this.transfer(next);
-      else await this.end("EMPTY_TIMEOUT");
-    }
+    if (wasHost && !options.transferTo) await this.transferOrEnd();
     await this.removeMedia(userId);
   }
   async settings(value: boolean) {
@@ -361,14 +417,32 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       );
       return;
     }
+    const preservesPendingSeek = this.pendingSeek && e.type !== "playback.media_change" && e.type !== "playback.seek";
+    const pendingSeekPosition = preservesPendingSeek ? this.state?.position : undefined;
     if (e.type !== "playback.seek") this.flush();
     const old = this.state;
-    const sameMedia =
-      "provider" in e.payload &&
-      old?.provider === e.payload.provider &&
-      old.mediaId === e.payload.mediaId &&
-      old.url === e.payload.url;
-    if (e.type === "playback.media_change" && (!old ? room.hostUserId !== userId : !sameMedia)) {
+    const payload = pendingSeekPosition === undefined || !("position" in e.payload)
+      ? e.payload
+      : { ...e.payload, position: pendingSeekPosition };
+    const seekPaused =
+      e.type === "playback.seek" && "paused" in e.payload
+        ? (e.payload as { paused?: boolean }).paused
+        : undefined;
+    const destination = descriptorBearingEvents.has(e.type)
+      ? e.payload as MediaDestination
+      : null;
+    const persistedMedia = room.mediaProvider && room.mediaUrl
+      ? { provider: room.mediaProvider, mediaId: room.mediaId, url: room.mediaUrl }
+      : null;
+    const sameMedia = !!old && !!destination && sameMediaDestination(
+      { provider: old.provider, mediaId: old.mediaId, url: old.url },
+      destination,
+    );
+    const destinationAllowed = old
+      ? sameMedia
+      : room.hostUserId === userId &&
+        (!persistedMedia || (!!destination && sameMediaDestination(persistedMedia, destination)));
+    if (destination && ((!old && e.type !== "playback.media_change") || !destinationAllowed)) {
       if (old) this.sync(p.socket);
       else this.send(
         "playback.control_rejected",
@@ -378,24 +452,26 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       return;
     }
     const nextAudio = {
-      muted: "muted" in e.payload ? e.payload.muted : old?.muted ?? false,
-      volume: "volume" in e.payload ? e.payload.volume : old?.volume ?? 1,
+      muted: "muted" in payload ? payload.muted : old?.muted ?? false,
+      volume: "volume" in payload ? payload.volume : old?.volume ?? 1,
     };
     if (e.type === "playback.rate_change")
-      this.state = { ...old!, ...e.payload };
+      this.state = { ...old!, ...payload };
     else if (e.type === "playback.audio_change")
-      this.state = { ...old!, ...e.payload, ...nextAudio };
+      this.state = { ...old!, ...payload, ...nextAudio };
     else
       this.state = {
         ...e.payload,
         ...nextAudio,
         paused:
           e.type === "playback.media_change"
-            ? e.payload.paused
+            ? !!("paused" in e.payload && e.payload.paused)
             : e.type === "playback.play"
               ? false
               : e.type === "playback.pause"
                 ? true
+                : e.type === "playback.seek" && seekPaused !== undefined
+                  ? seekPaused
                 : sameMedia
                   ? old!.paused
                   : true,
@@ -404,9 +480,12 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
         updatedBy: userId,
         stateSequence: 0,
       };
-    this.state.updatedAt = this.now();
-    this.state.updatedBy = userId;
-    this.state.stateSequence = ++this.stateSequence;
+    if (e.type !== "playback.seek" && pendingSeekPosition !== undefined && "position" in e.payload)
+      this.state!.position = pendingSeekPosition;
+    const nextState = this.state!;
+    nextState.updatedAt = this.now();
+    nextState.updatedBy = userId;
+    nextState.stateSequence = ++this.stateSequence;
     if (e.type === "playback.seek") {
       if (!this.pendingSeek) this.seekDue = this.now() + 50;
       this.pendingSeek = true;
@@ -429,11 +508,7 @@ export class MemoryRoomCoordinator implements RoomCoordinator {
       this.presence.delete(userId);
       this.send("room.member_left", { userId, reason: "DISCONNECTED_TIMEOUT" });
       await this.removeMedia(userId);
-      if (wasHost) {
-        const next = this.selectNextHost();
-        if (next) await this.transfer(next);
-        else await this.end("EMPTY_TIMEOUT");
-      }
+      if (wasHost) await this.transferOrEnd();
     }
     if (this.pendingSeek && now >= this.seekDue) this.flush();
   }

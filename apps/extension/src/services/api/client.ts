@@ -22,7 +22,9 @@ import {
   ticketResponse,
 } from "@syncron/protocol";
 import { z } from "zod";
+import { browser } from "wxt/browser";
 
+import { YOUTUBE_API_REQUEST } from "~/lib/extension-messages";
 import { getStoredToken } from "~/services/auth/client";
 
 // Same origin as the Better Auth client (docker-compose.yml maps the API
@@ -46,11 +48,9 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  schema: z.ZodType<T>,
-  init?: RequestInit,
-): Promise<T> {
+export type ApiProxyResponse = { status: number; body: unknown };
+
+export async function fetchApiRequest(path: string, init?: RequestInit): Promise<ApiProxyResponse> {
   const token = await getStoredToken();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -60,20 +60,38 @@ async function request<T>(
       ...(init?.headers ?? {}),
     },
   });
+  return { status: res.status, body: await res.json().catch(() => null) };
+}
 
-  if (res.status === 204) return undefined as T;
-  const body = await res.json().catch(() => null);
+function isYoutubeContentScript(): boolean {
+  return typeof window !== "undefined" && window.location.origin === "https://www.youtube.com";
+}
 
-  if (!res.ok) {
-    const parsed = errorResponse.safeParse(body);
+async function request<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  init?: RequestInit,
+): Promise<T> {
+  const method = init?.method ?? "GET";
+  const body = typeof init?.body === "string" ? init.body : undefined;
+  const response = isYoutubeContentScript()
+    ? await browser.runtime.sendMessage({ type: YOUTUBE_API_REQUEST, path, method, body }) as ApiProxyResponse | undefined
+    : await fetchApiRequest(path, init);
+  if (!response || typeof response.status !== "number")
+    throw new ApiError("UNKNOWN_ERROR", 502, "Request failed.");
+
+  if (response.status === 204) return undefined as T;
+
+  if (response.status < 200 || response.status >= 300) {
+    const parsed = errorResponse.safeParse(response.body);
     if (parsed.success) {
       const { code, message, requestId } = parsed.data.error;
-      throw new ApiError(code, res.status, message, requestId);
+      throw new ApiError(code, response.status, message, requestId);
     }
-    throw new ApiError("UNKNOWN_ERROR", res.status, "Request failed.");
+    throw new ApiError("UNKNOWN_ERROR", response.status, "Request failed.");
   }
 
-  return schema.parse(body);
+  return schema.parse(response.body);
 }
 
 export const api = {

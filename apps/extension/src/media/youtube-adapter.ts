@@ -29,7 +29,8 @@ export interface RemotePlaybackState {
 }
 
 export type LocalMediaEvent =
-  | { type: "play" | "pause" | "seek" | "ratechange" | "audiochange"; snapshot: MediaSnapshot }
+  | { type: "play" | "pause" | "ratechange" | "audiochange"; snapshot: MediaSnapshot }
+  | { type: "seek"; snapshot: MediaSnapshot; paused: boolean }
   | { type: "mediaChange"; snapshot: MediaSnapshot }
   | { type: "navigationBlocked"; attemptedUrl: string }
   | { type: "buffering"; buffering: boolean; position: number }
@@ -50,13 +51,21 @@ const REMOTE_EVENT_WINDOW_MS = 1000;
 // YouTube can emit a trailing pause/play while it settles a seek. Keep those
 // native events out of the room protocol; the seek event already carries the
 // authoritative position and the server coalesces it briefly.
-const SEEK_EVENT_SETTLE_MS = 200;
+const SEEK_EVENT_SETTLE_MS = 750;
 const ATTACH_RETRY_MS = 500;
 const AUDIO_CHANGE_DEBOUNCE_MS = 50;
 
 function currentMediaId(): string | null {
   try {
     return new URL(location.href).searchParams.get("v");
+  } catch {
+    return null;
+  }
+}
+
+function mediaIdFromUrl(url: string): string | null {
+  try {
+    return new URL(url).searchParams.get("v");
   } catch {
     return null;
   }
@@ -95,6 +104,7 @@ export class YoutubeMediaAdapter {
   private lockedMedia: { mediaId: string | null; url: string } | null = null;
   private allowNextNavigation = false;
   private seeking = false;
+  private seekWasPlaying: boolean | null = null;
   private suppressPlaybackEventsUntil = 0;
   private stopped = false;
   private readonly listeners = new Set<(event: LocalMediaEvent) => void>();
@@ -164,6 +174,7 @@ export class YoutubeMediaAdapter {
     this.lockedMedia = null;
     this.allowNextNavigation = false;
     this.seeking = false;
+    this.seekWasPlaying = null;
     this.suppressPlaybackEventsUntil = 0;
     this.remoteEventTypes.clear();
     this.remoteRateChangeTarget = null;
@@ -277,7 +288,7 @@ export class YoutubeMediaAdapter {
   }
 
   private correctDrift(): void {
-    if (Date.now() < this.pendingLocalControlUntil) return;
+    if (this.seeking || Date.now() < this.pendingLocalControlUntil) return;
     const video = this.video;
     const state = this.remoteState;
     const anchor = this.remoteAnchor;
@@ -366,7 +377,11 @@ export class YoutubeMediaAdapter {
       this.videoListeners.push([name, fn]);
     };
     on("seeking", () => {
+      const remoteSeekActive = this.remoteEventTypes.has("seek") && Date.now() <= this.remoteEventUntil;
+      if (!remoteSeekActive && !this.seeking)
+        this.seekWasPlaying = !video.paused;
       this.seeking = true;
+      this.suppressPlaybackEventsUntil = Date.now() + SEEK_EVENT_SETTLE_MS;
     });
     on("play", () => {
       if (!this.isSeeking()) this.emitControlEvent("play");
@@ -375,9 +390,14 @@ export class YoutubeMediaAdapter {
       if (!this.isSeeking()) this.emitControlEvent("pause");
     });
     on("seeked", () => {
-      this.emitControlEvent("seek");
+      const localSeek = this.seekWasPlaying !== null;
+      const wasPlaying = this.seekWasPlaying ?? !video.paused;
       this.seeking = false;
       this.suppressPlaybackEventsUntil = Date.now() + SEEK_EVENT_SETTLE_MS;
+      this.emitControlEvent("seek", localSeek ? !wasPlaying : undefined, localSeek);
+      this.seekWasPlaying = null;
+      if (localSeek && wasPlaying && this.autoplayAllowed && video.paused)
+        void video.play().catch(() => undefined);
     });
     on("ratechange", () => this.emitControlEvent("ratechange"));
     on("volumechange", () => {
@@ -484,7 +504,7 @@ export class YoutubeMediaAdapter {
     const locked = this.lockedMedia;
     if (!locked) return true;
     if (locked.mediaId !== null || currentMediaId() !== null)
-      return locked.mediaId === currentMediaId();
+      return (locked.mediaId ?? mediaIdFromUrl(locked.url)) === currentMediaId();
     return location.href === locked.url;
   }
 
@@ -496,8 +516,8 @@ export class YoutubeMediaAdapter {
     }, 0);
   }
 
-  private emitControlEvent(type: ControlEventType): void {
-    if (this.matchesRemoteState(type)) return;
+  private emitControlEvent(type: ControlEventType, seekPaused?: boolean, force = false): void {
+    if (!force && this.matchesRemoteState(type)) return;
     if (
       type === "ratechange" &&
       this.remoteState &&
@@ -507,7 +527,8 @@ export class YoutubeMediaAdapter {
     const snapshot = this.getSnapshot();
     if (!snapshot) return;
     this.pendingLocalControlUntil = Date.now() + REMOTE_EVENT_WINDOW_MS;
-    this.notify({ type, snapshot });
+    if (type === "seek") this.notify({ type, snapshot, paused: seekPaused ?? snapshot.paused });
+    else this.notify({ type, snapshot });
   }
 
   private isSeeking(): boolean {

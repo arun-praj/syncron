@@ -1,9 +1,12 @@
+import "dotenv/config";
 import { defineConfig } from "wxt";
 
 // The API's GET /join page is served from the same origin as the REST API
 // (services/api/client.ts's API_BASE_URL) — reusing WXT_API_URL here
 // instead of a second env var means the two can't silently drift apart.
 const APP_URL = process.env.WXT_API_URL ?? "http://localhost:8000";
+const APP_ORIGIN = new URL(APP_URL).origin;
+const APP_HOST = new URL(APP_URL).hostname;
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({
@@ -15,6 +18,8 @@ export default defineConfig({
       "Watch parties in sync — shared playback, live chat, and calls without leaving YouTube.",
     permissions: ["storage", "scripting"],
     host_permissions: [
+      `${APP_ORIGIN}/*`,
+      `http://${APP_HOST}:7880/*`,
       "http://localhost:8000/*",
       "http://127.0.0.1:8000/*",
       "http://localhost:7880/*",

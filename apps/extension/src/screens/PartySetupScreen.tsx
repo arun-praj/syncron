@@ -103,7 +103,6 @@ export default function PartySetupScreen({
 
   const createParty = async () => {
     const playback = await readPlaybackSnapshot?.();
-    resetPlaybackToStart?.();
     const { room, inviteUrl } = await api.createRoom({
       name: tabTitle.slice(0, 100),
       everyoneCanControl: allowControl,
@@ -118,9 +117,10 @@ export default function PartySetupScreen({
               muted: playback.muted,
               volume: playback.volume,
             },
-          }
+        }
         : {}),
     });
+    resetPlaybackToStart?.();
     enterRoom({
       service,
       tabId,

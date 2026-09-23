@@ -3,6 +3,7 @@ import { storage } from "wxt/utils/storage";
 import { isRateLimited } from "@/auth-flow";
 import {
   ACTIVATE_YOUTUBE_SIDEBAR,
+  isAllowedYoutubeApiRequest,
   isOpenYoutubeSidebarMessage,
   isOpenServiceTabMessage,
   isSyncronJoinInviteMessage,
@@ -10,6 +11,7 @@ import {
   isSyncronPingMessage,
   isYoutubeContentReadyMessage,
   type JoinedRoomSnapshot,
+  withInitialDevicePreferences,
 } from "@/lib/extension-messages";
 import {
   clearActiveYoutubeRoom,
@@ -18,7 +20,7 @@ import {
   listActiveYoutubeRooms,
   setActiveYoutubeRoom,
 } from "@/lib/room-session";
-import { api, ApiError } from "@/services/api/client";
+import { api, ApiError, fetchApiRequest } from "@/services/api/client";
 
 const TARGET_TABS_KEY = "session:syncronTargetYoutubeTabs" as const;
 const PENDING_JOINS_KEY = "session:syncronPendingJoinedRooms" as const;
@@ -68,23 +70,18 @@ async function clearPendingJoin(tabId: number): Promise<void> {
   await storage.setItem(PENDING_JOINS_KEY, rest);
 }
 
-// Consumes (removes) the pending join so it's only ever applied once, even
-// if a tab somehow announces readiness more than once.
-async function takePendingJoin(tabId: number): Promise<JoinedRoomSnapshot | undefined> {
-  const pending = await pendingJoins();
-  const snapshot = pending[tabId];
-  if (snapshot === undefined) return undefined;
-  const rest = Object.fromEntries(Object.entries(pending).filter(([id]) => Number(id) !== tabId));
-  await storage.setItem(PENDING_JOINS_KEY, rest);
-  return snapshot;
-}
-
 type ActiveRoomRefresh =
   | { status: "active"; snapshot: JoinedRoomSnapshot }
   | { status: "reconnecting" }
   | { status: "inactive" };
 
-async function refreshActiveRoom(record: { roomId: string; selfUserId: string }): Promise<ActiveRoomRefresh> {
+async function refreshActiveRoom(
+  record: { roomId: string; selfUserId: string },
+  initialDevicePreferences?: Pick<
+    JoinedRoomSnapshot,
+    "initialMicrophoneEnabled" | "initialCameraEnabled"
+  >,
+): Promise<ActiveRoomRefresh> {
   try {
     const [{ room }, { members }, meResponse] = await Promise.all([
       api.getRoom(record.roomId),
@@ -106,7 +103,7 @@ async function refreshActiveRoom(record: { roomId: string; selfUserId: string })
 
     return {
       status: "active",
-      snapshot: {
+      snapshot: withInitialDevicePreferences({
         roomId: room.id,
         isHost: self.role === "HOST",
         everyoneCanControl: room.everyoneCanControl,
@@ -120,7 +117,7 @@ async function refreshActiveRoom(record: { roomId: string; selfUserId: string })
           isHost: member.role === "HOST",
         })),
         selfUserId,
-      },
+      }, initialDevicePreferences),
     };
   } catch (error) {
     if (
@@ -147,9 +144,6 @@ async function activateYoutubeTab(tabId: number): Promise<void> {
         target: { tabId },
         files: ["content-scripts/youtube.js"],
       });
-      // executeScript resolves when the file is injected, not when the
-      // content script has installed its message listener.
-      await browser.tabs.sendMessage(tabId, { type: ACTIVATE_YOUTUBE_SIDEBAR, tabId });
     } catch {
       // If the loaded extension predates the scripting permission, reload is
       // the only reliable way to install the declared YouTube content script.
@@ -273,8 +267,76 @@ async function handleJoinInvite(
   }
 }
 
+export async function handleYoutubeContentReady(tabId: number): Promise<
+  | { type: typeof ACTIVATE_YOUTUBE_SIDEBAR; tabId: number; joinedRoom?: JoinedRoomSnapshot; roomRecovery?: { status: "reconnecting" } }
+  | undefined
+> {
+  const target = await isTargetTab(tabId);
+  const pendingJoin = await getPendingJoin(tabId);
+  const storedRoom = pendingJoin
+    ? { roomId: pendingJoin.roomId, selfUserId: pendingJoin.selfUserId }
+    : await getActiveYoutubeRoom(tabId);
+  // The target list is a navigation hint and may be lost when the service
+  // worker restarts. A stored active room is authoritative.
+  if (!target && !storedRoom) return undefined;
+  if (!storedRoom) return { type: ACTIVATE_YOUTUBE_SIDEBAR, tabId };
+
+  const recovery = await refreshActiveRoom(
+    storedRoom,
+    pendingJoin
+      ? {
+          initialMicrophoneEnabled: pendingJoin.initialMicrophoneEnabled,
+          initialCameraEnabled: pendingJoin.initialCameraEnabled,
+        }
+      : undefined,
+  );
+  if (recovery.status === "active") {
+    await clearPendingJoin(tabId);
+    await setActiveYoutubeRoom(tabId, {
+      roomId: recovery.snapshot.roomId,
+      selfUserId: recovery.snapshot.selfUserId,
+    });
+    return {
+      type: ACTIVATE_YOUTUBE_SIDEBAR,
+      tabId,
+      joinedRoom: recovery.snapshot,
+    };
+  }
+  if (recovery.status === "reconnecting") {
+    return {
+      type: ACTIVATE_YOUTUBE_SIDEBAR,
+      tabId,
+      roomRecovery: { status: "reconnecting" as const },
+    };
+  }
+
+  await clearPendingJoin(tabId);
+  await clearActiveYoutubeRoom(tabId);
+  return { type: ACTIVATE_YOUTUBE_SIDEBAR, tabId };
+}
+
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message, sender) => {
+    if (isAllowedYoutubeApiRequest(message)) {
+      const senderUrl = sender.tab?.url;
+      let youtubeSender = false;
+      try {
+        youtubeSender = !!senderUrl && new URL(senderUrl).origin === "https://www.youtube.com";
+      } catch {
+        youtubeSender = false;
+      }
+      if (
+        sender.id !== browser.runtime.id ||
+        sender.tab?.id === undefined ||
+        sender.frameId !== 0 ||
+        !youtubeSender
+      ) return undefined;
+      return fetchApiRequest(message.path, {
+        method: message.method,
+        ...(message.body === undefined ? {} : { body: message.body }),
+      });
+    }
+
     if (isOpenServiceTabMessage(message)) {
       return browser.tabs.create({ url: message.href, active: true }).then(async (tab) => {
         if (tab.id !== undefined && message.serviceId === "YOUTUBE") {
@@ -288,42 +350,7 @@ export default defineBackground(() => {
     }
 
     if (isYoutubeContentReadyMessage(message) && sender.tab?.id !== undefined) {
-      const tabId = sender.tab.id;
-      return isTargetTab(tabId).then(async (target) => {
-        const pendingJoin = await takePendingJoin(tabId);
-        if (pendingJoin) {
-          await setActiveYoutubeRoom(tabId, {
-            roomId: pendingJoin.roomId,
-            selfUserId: pendingJoin.selfUserId,
-          });
-        }
-        const storedRoom = pendingJoin
-          ? { roomId: pendingJoin.roomId, selfUserId: pendingJoin.selfUserId }
-          : await getActiveYoutubeRoom(tabId);
-        // The target list is a navigation hint and may be lost when the
-        // service worker restarts. A stored active room is authoritative.
-        if (!target && !storedRoom) return undefined;
-        if (!storedRoom) return { type: ACTIVATE_YOUTUBE_SIDEBAR, tabId };
-
-        const recovery = await refreshActiveRoom(storedRoom);
-        if (recovery.status === "active") {
-          await setActiveYoutubeRoom(tabId, {
-            roomId: recovery.snapshot.roomId,
-            selfUserId: recovery.snapshot.selfUserId,
-          });
-          return { type: ACTIVATE_YOUTUBE_SIDEBAR, tabId, joinedRoom: recovery.snapshot };
-        }
-        if (recovery.status === "reconnecting") {
-          return {
-            type: ACTIVATE_YOUTUBE_SIDEBAR,
-            tabId,
-            roomRecovery: { status: "reconnecting" as const },
-          };
-        }
-
-        await clearActiveYoutubeRoom(tabId);
-        return { type: ACTIVATE_YOUTUBE_SIDEBAR, tabId };
-      });
+      return handleYoutubeContentReady(sender.tab.id);
     }
   });
 

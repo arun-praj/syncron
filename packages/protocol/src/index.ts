@@ -9,11 +9,37 @@ export const avatarId = z.enum([
   "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
 ]);
 export const mediaProvider = z.enum(["GENERIC", "YOUTUBE", "SPOTIFY", "NETFLIX"]);
-export const mediaDestination = z.strictObject({
+const mediaDestinationFields = {
   provider: mediaProvider,
   mediaId: z.string().max(512).nullable(),
   url: z.url().max(2048).refine((v) => /^https?:\/\//.test(v)),
-});
+};
+export function youtubeMediaId(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") return null;
+  if (!["youtube.com", "www.youtube.com"].includes(parsed.hostname.toLowerCase())) return null;
+  const id = parsed.pathname === "/watch" ? parsed.searchParams.get("v") : null;
+  return id && id.length <= 512 ? id : null;
+}
+function validateMediaDestination(
+  value: { provider: z.infer<typeof mediaProvider>; mediaId: string | null; url: string },
+  ctx: z.RefinementCtx,
+) {
+  if (value.provider !== "YOUTUBE") return;
+  const urlMediaId = youtubeMediaId(value.url);
+  if (!urlMediaId)
+    ctx.addIssue({ code: "custom", message: "Invalid YouTube media URL" });
+  else if (value.mediaId !== null && value.mediaId !== urlMediaId)
+    ctx.addIssue({ code: "custom", message: "YouTube mediaId does not match URL" });
+}
+export const mediaDestination = z
+  .strictObject(mediaDestinationFields)
+  .superRefine(validateMediaDestination);
 const position = z.number().finite().nonnegative();
 const rate = z.number().min(0.25).max(4);
 const volume = z.number().finite().min(0).max(1);
@@ -56,9 +82,11 @@ export const inviteClaims = z.strictObject({
   roomId,
   inviteVersion: z.number().int().positive(),
 });
-const media = { ...mediaDestination.shape, position };
+const media = { ...mediaDestinationFields, position };
 const audio = { muted: z.boolean(), volume };
 const legacyAudio = { muted: z.boolean().default(false), volume: volume.default(1) };
+const playbackMedia = (extra: Record<string, z.ZodType> = {}) =>
+  z.strictObject({ ...media, ...extra }).superRefine(validateMediaDestination);
 const envelope = {
   requestId: id,
   sequence: z.number().int().nonnegative(),
@@ -69,17 +97,16 @@ const event = <T extends string, S extends z.ZodType>(type: T, payload: S) =>
 export const clientEvent = z.discriminatedUnion("type", [
   event("playback.sync_request", empty),
   event("client.ping", z.strictObject({ clientTime: z.number().finite() })),
-  event("playback.play", z.strictObject(media)),
-  event("playback.pause", z.strictObject(media)),
-  event("playback.seek", z.strictObject(media)),
+  event("playback.play", playbackMedia()),
+  event("playback.pause", playbackMedia()),
+  event("playback.seek", playbackMedia({ paused: z.boolean().optional() })),
   event(
     "playback.rate_change",
     z.strictObject({ position, playbackRate: rate }),
   ),
   event(
     "playback.media_change",
-    z.strictObject({
-      ...media,
+    playbackMedia({
       ...legacyAudio,
       paused: z.boolean(),
       metadata: z

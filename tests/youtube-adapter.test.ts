@@ -29,6 +29,11 @@ class FakeVideo {
     this.paused = true;
   }
 
+  play(): Promise<void> {
+    this.paused = false;
+    return Promise.resolve();
+  }
+
   removeAttribute(): void {}
 
   requestVideoFrameCallback?: never;
@@ -274,6 +279,86 @@ test("does not publish transient pause and play events while seeking", () => {
   adapter.stop();
 });
 
+test("preserves a playing state through a local seek", async () => {
+  const video = new FakeVideo();
+  video.paused = false;
+  vi.stubGlobal("location", { href: "https://www.youtube.com/watch?v=video" });
+  vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  vi.stubGlobal("document", {
+    title: "Video - YouTube",
+    hidden: false,
+    querySelector: () => video,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+
+  const adapter = new YoutubeMediaAdapter();
+  const events: Array<{ type: string; paused?: boolean; position?: number }> = [];
+  adapter.subscribe((event) => {
+    if ("snapshot" in event) events.push({ type: event.type, paused: event.type === "seek" ? event.paused : undefined, position: event.snapshot.position });
+  });
+  adapter.start();
+  adapter.applyRemote({
+    position: 4,
+    paused: false,
+    playbackRate: 1,
+    muted: false,
+    volume: 1,
+    updatedAt: Date.now(),
+  });
+  video.dispatch("seeking");
+  video.paused = true;
+  video.currentTime = 20;
+  video.dispatch("pause");
+  video.dispatch("seeked");
+  await Promise.resolve();
+
+  expect(events).toEqual([{ type: "seek", paused: false, position: 20 }]);
+  expect(video.paused).toBe(false);
+  adapter.stop();
+});
+
+test("recognizes a local seek after remote seek suppression expires", async () => {
+  const video = new FakeVideo();
+  video.paused = false;
+  vi.stubGlobal("location", { href: "https://www.youtube.com/watch?v=video" });
+  vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  vi.stubGlobal("document", {
+    title: "Video - YouTube",
+    hidden: false,
+    querySelector: () => video,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+
+  const adapter = new YoutubeMediaAdapter();
+  const events: Array<{ type: string; paused?: boolean; position?: number }> = [];
+  adapter.subscribe((event) => {
+    if ("snapshot" in event)
+      events.push({ type: event.type, paused: event.type === "seek" ? event.paused : undefined, position: event.snapshot.position });
+  });
+  adapter.start();
+  adapter.applyRemote({
+    position: 20,
+    paused: false,
+    playbackRate: 1,
+    muted: false,
+    volume: 1,
+    updatedAt: Date.now(),
+  });
+  (adapter as unknown as { remoteEventUntil: number }).remoteEventUntil = Date.now() - 1;
+  video.dispatch("seeking");
+  video.paused = true;
+  video.currentTime = 30;
+  video.dispatch("pause");
+  video.dispatch("seeked");
+  await Promise.resolve();
+
+  expect(events.at(-1)).toEqual({ type: "seek", paused: false, position: 30 });
+  expect(video.paused).toBe(false);
+  adapter.stop();
+});
+
 test("members cannot let YouTube autoplay navigate away from the locked media", () => {
   const video = new FakeVideo();
   vi.stubGlobal("location", { href: "https://www.youtube.com/watch?v=video" });
@@ -293,6 +378,18 @@ test("members cannot let YouTube autoplay navigate away from the locked media", 
   video.dispatch("ended");
   expect(video.autoplay).toBe(false);
   adapter.stop();
+});
+
+test("matches a null locked media ID by the YouTube URL video ID", () => {
+  const page = { href: "https://www.youtube.com/watch?v=abc&t=20" };
+  vi.stubGlobal("location", page);
+
+  const adapter = new YoutubeMediaAdapter();
+  adapter.lockToMedia(null, "https://www.youtube.com/watch?v=abc&si=invite");
+  expect((adapter as unknown as { isLockedMedia: () => boolean }).isLockedMedia()).toBe(true);
+
+  page.href = "https://www.youtube.com/watch?v=different-video";
+  expect((adapter as unknown as { isLockedMedia: () => boolean }).isLockedMedia()).toBe(false);
 });
 
 test("the host may advance once after the video ends and locks the new media", () => {

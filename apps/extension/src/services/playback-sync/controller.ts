@@ -20,6 +20,8 @@ export interface PlaybackSyncHandlers {
   onControlBlocked?: () => void;
   onPlaybackTransition?: (paused: boolean, updatedBy: string) => void;
   onPlaybackSeek?: (position: number, updatedBy: string) => void;
+  onPlaybackAudioChange?: (muted: boolean, volume: number, updatedBy: string) => void;
+  onTerminal?: (reason: string) => void;
   // room.member_joined/left/host_changed/kicked/ended/settings_changed etc.
   // — everything except the playback.state/no_state this controller
   // already applies itself. The caller (room-store) reacts to these.
@@ -63,6 +65,10 @@ export class PlaybackSyncController {
         this.authoritativeState = null;
         this.authoritativeMediaKey = null;
         this.handlers.onConnectionChange(false);
+      },
+      onTerminal: (reason) => {
+        this.stop();
+        this.handlers.onTerminal?.(reason);
       },
     });
     this.adapter.setAutoplayAllowed(isHost);
@@ -135,7 +141,7 @@ export class PlaybackSyncController {
     };
     if (event.type === "play") this.socket.play(media);
     else if (event.type === "pause") this.socket.pause(media);
-    else if (event.type === "seek") this.socket.seek(media);
+    else if (event.type === "seek") this.socket.seek({ ...media, paused: event.paused });
     else if (event.type === "ratechange") {
       this.socket.rateChange({ position: snapshot.position, playbackRate: snapshot.playbackRate });
     } else if (event.type === "audiochange") {
@@ -183,9 +189,12 @@ export class PlaybackSyncController {
       const previousState = this.authoritativeState;
       const mediaKey = `${payload.provider}:${payload.mediaId ?? ""}:${payload.url}`;
       const sameMedia = this.authoritativeMediaKey === mediaKey;
-      const isSeek = isNewState && sameMedia && previousState !== null
-        && previousState.paused === payload.paused
-        && Math.abs(previousState.position - payload.position) > 0.25;
+      const positionChanged = previousState !== null && Math.abs(previousState.position - payload.position) > 0.25;
+      const pausedChanged = previousState !== null && previousState.paused !== payload.paused;
+      const rateChanged = previousState !== null && Math.abs(previousState.playbackRate - payload.playbackRate) > 0.001;
+      const audioChanged = previousState !== null
+        && (previousState.muted !== payload.muted || Math.abs(previousState.volume - payload.volume) > 0.001);
+      const isSeek = isNewState && sameMedia && positionChanged && !pausedChanged && !rateChanged && !audioChanged;
       const localHostRate = this.isHost && this.lastAppliedSequence === -1
         ? this.adapter.getSnapshot()?.playbackRate
         : undefined;
@@ -216,9 +225,11 @@ export class PlaybackSyncController {
         if (localHostRate !== undefined && localHostRate !== payload.playbackRate) {
           this.socket.rateChange({ position: payload.position, playbackRate: localHostRate });
         }
-        if (isNewState && previousState && previousState.paused !== payload.paused) {
+        if (isNewState && previousState && previousState.paused !== payload.paused && !isSeek) {
           this.handlers.onPlaybackTransition?.(payload.paused, payload.updatedBy);
         }
+        if (isNewState && audioChanged)
+          this.handlers.onPlaybackAudioChange?.(payload.muted, payload.volume, payload.updatedBy);
         if (isSeek) this.handlers.onPlaybackSeek?.(payload.position, payload.updatedBy);
       }
       this.handlers.onPlaybackState({

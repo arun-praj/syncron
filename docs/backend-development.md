@@ -30,10 +30,10 @@ The API defaults to port 8000. `pnpm start` runs without watching. The developme
 | `LIVEKIT_INTERNAL_URL` | required server-facing http(s)/ws(s) URL |
 | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | both required; secret at least 32 characters |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | both optional; partial configuration fails startup |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SENDER` | `localhost`, 1025, `syncron@localhost.test`; Mailpit defaults |
-| `GMAIL_HOST`, `GMAIL_PORT`, `GMAIL_USERNAME`, `GMAIL_APP_PASSWORD`, `GMAIL_SENDER` | all five switch to Gmail; partial configuration fails startup; TLS required |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER` | `localhost`, 1025, no auth, `syncron@localhost.test`; set both credentials for authenticated SMTP such as Brevo |
+| `GMAIL_HOST`, `GMAIL_PORT`, `GMAIL_USERNAME`, `GMAIL_APP_PASSWORD`, `GMAIL_SENDER` | all five enable Gmail-only mode, or Gmail fallback after generic SMTP; partial configuration fails startup; TLS required |
 
-Set Google's authorized callback URI to `<BETTER_AUTH_URL>/api/auth/callback/google`. Google sign-in is disabled when credentials are absent. The provider must assert a verified email; otherwise authentication fails. Do not use real Gmail credentials in tests. SMTP connectivity is reported by readiness; partial or invalid configuration fails immediately.
+Set Google's authorized callback URI to `<BETTER_AUTH_URL>/api/auth/callback/google`. Google sign-in is disabled when credentials are absent. The provider must assert a verified email; otherwise authentication fails. Do not use real Gmail credentials in tests. SMTP connectivity is reported by readiness; partial or invalid configuration fails immediately. Authenticated generic SMTP is tried first when configured; Gmail is used as a fallback when all Gmail settings are present.
 
 ## Local infrastructure
 

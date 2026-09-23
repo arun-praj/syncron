@@ -269,9 +269,15 @@ export const useRoomStore = create<RoomState>((set, get) => ({
       isHost = self.role === "HOST";
       everyoneCanControl = room.everyoneCanControl;
       const canShareInvite = isHost || room.allowMembersToShareInvite;
-      const inviteUrl = canShareInvite
-        ? await api.getInvite(roomId).then((result) => result.inviteUrl).catch(() => identity.inviteUrl)
-        : null;
+      let inviteUrl = canShareInvite ? identity.inviteUrl : null;
+      if (canShareInvite) {
+        try {
+          inviteUrl = (await api.getInvite(roomId)).inviteUrl;
+        } catch {
+          inviteUrl = identity.inviteUrl;
+        }
+      }
+      if (!stillCurrent()) return;
       set((state) => ({
         identity: state.identity
           ? {
@@ -296,6 +302,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
         })),
       }));
     } catch (error) {
+      if (!stillCurrent()) return;
       if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
         get().forceLeave("Your party session is no longer valid.");
         return;
@@ -303,6 +310,8 @@ export const useRoomStore = create<RoomState>((set, get) => ({
       // Keep the current snapshot during a temporary API failure; the
       // realtime connection has its own reconnect path.
     }
+
+    if (!stillCurrent()) return;
 
     const playbackSync = new PlaybackSyncController(
       roomId,
@@ -350,10 +359,31 @@ export const useRoomStore = create<RoomState>((set, get) => ({
             messages: [...s.messages, systemMessage(`Video seeked to ${formatPlaybackTime(position)} by ${actor}`)],
           }));
         },
-        onRoomEvent: (event) => get().handleRoomEvent(roomId, event),
+        onPlaybackAudioChange: (muted, volume, updatedBy) => {
+          if (!stillCurrent()) return;
+          const current = get();
+          const actor = formatMemberLabel(
+            current.members.find((member) => member.id === updatedBy)
+              ?? (updatedBy === current.identity?.selfUserId ? { id: updatedBy, name: "" } : null),
+            current.identity?.selfUserId,
+          );
+          const status = muted ? `${actor} muted the video` : `${actor} set the volume to ${Math.round(volume * 100)}`;
+          set((s) => ({ messages: [...s.messages, systemMessage(status)] }));
+        },
+        onRoomEvent: (event) => {
+          if (stillCurrent()) get().handleRoomEvent(roomId, event);
+        },
+        onTerminal: (reason) => {
+          if (stillCurrent()) get().forceLeave(reason);
+        },
       },
     );
     playbackSync.start();
+
+    if (!stillCurrent()) {
+      playbackSync.stop();
+      return;
+    }
 
     const liveKit = new LiveKitSession({
       onVideoTrackChanged: (participantId, mediaTrack) => {
@@ -393,6 +423,11 @@ export const useRoomStore = create<RoomState>((set, get) => ({
       },
     });
 
+    if (!stillCurrent()) {
+      playbackSync.stop();
+      void liveKit.disconnect();
+      return;
+    }
     set({ playbackSync, liveKit });
 
     try {
@@ -427,6 +462,10 @@ export const useRoomStore = create<RoomState>((set, get) => ({
         camBlocked: cameraEnabled && !camGranted,
       });
     } catch (e) {
+      if (!stillCurrent()) {
+        void liveKit.disconnect();
+        return;
+      }
       // Playback sync still works without LiveKit — AV/chat just aren't
       // available this session (e.g. LiveKit unreachable/misconfigured).
       console.error("[Syncron] LiveKit setup failed — AV/chat unavailable this session", e);
@@ -501,8 +540,10 @@ export const useRoomStore = create<RoomState>((set, get) => ({
           ],
         }));
         if (isSelfHost) {
+          const generation = get().activeGeneration;
           void api.getInvite(roomId).then(({ inviteUrl }) => {
-            if (get().identity?.roomId === roomId) set({ identity: { ...get().identity!, inviteUrl } });
+            if (get().activeGeneration !== generation || get().identity?.roomId !== roomId) return;
+            set({ identity: { ...get().identity!, inviteUrl } });
           }).catch(() => undefined);
         }
         return;
@@ -581,13 +622,16 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   leaveRoom: async (options = {}) => {
     const { identity, playbackSync, liveKit } = get();
     if (!identity) return true;
+    const generation = get().activeGeneration;
+    const stillCurrent = () => get().activeGeneration === generation;
     const requiresServerDecision = Boolean(options.disband || options.transferTo);
     if (requiresServerDecision) {
       try {
         await api.leaveRoom(identity.roomId, options);
       } catch {
-        return false;
+        return stillCurrent() ? false : get().identity === null;
       }
+      if (!stillCurrent()) return get().identity === null;
       // A disband sends room.ended to this same client before the HTTP
       // response arrives; that handler already cleaned up this session.
       if (get().identity?.roomId !== identity.roomId) return true;
@@ -611,14 +655,19 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   copyInvite: async () => {
     const { identity } = get();
     if (!identity?.inviteUrl) return;
+    const generation = get().activeGeneration;
+    let copied = false;
     try {
       await navigator.clipboard.writeText(identity.inviteUrl);
+      copied = true;
     } catch {
-      // Link stays visible in the hint card / header for manual copying if
-      // clipboard access is denied.
+      return;
     }
+    if (!copied || get().activeGeneration !== generation) return;
     set({ copyLabel: "Copied!" });
-    setTimeout(() => set({ copyLabel: "Copy invite link" }), 1500);
+    setTimeout(() => {
+      if (get().activeGeneration === generation) set({ copyLabel: "Copy invite link" });
+    }, 1500);
   },
 
   dismissInviteHint: () => {
@@ -629,8 +678,10 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   toggleSelfMute: () => {
     const { liveKit, selfMuted } = get();
     if (!liveKit) return;
+    const generation = get().activeGeneration;
     const wantEnabled = selfMuted;
     void liveKit.setMicrophoneEnabled(wantEnabled).then((ok) => {
+      if (get().activeGeneration !== generation) return;
       set({ selfMuted: wantEnabled ? !ok : true, micBlocked: wantEnabled ? !ok : get().micBlocked });
     });
   },
@@ -638,8 +689,10 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   toggleSelfVideo: () => {
     const { liveKit, selfVideoOff } = get();
     if (!liveKit) return;
+    const generation = get().activeGeneration;
     const wantEnabled = selfVideoOff;
     void liveKit.setCameraEnabled(wantEnabled).then((ok) => {
+      if (get().activeGeneration !== generation) return;
       set({ selfVideoOff: wantEnabled ? !ok : true, camBlocked: wantEnabled ? !ok : get().camBlocked });
     });
   },

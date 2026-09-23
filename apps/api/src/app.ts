@@ -5,7 +5,7 @@ import { createNodeWebSocket } from "@hono/node-ws";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Auth } from "../../../packages/auth/src/index.js";
-import type { Config } from "../../../packages/config/src/index.js";
+import { trustedOrigins, type Config } from "../../../packages/config/src/index.js";
 import type { Database } from "../../../packages/db/src/index.js";
 import {
   memberships,
@@ -44,6 +44,15 @@ export async function createApp(deps: {
     string,
     { roomId: string; userId: string; expires: number }
   >();
+  // ponytail: this small in-process queue is enough for the current single-process API; replace it with a DB-backed claim before multi-worker deployment.
+  let createRoomTail: Promise<unknown> = Promise.resolve();
+  const runCreateSerial = <T>(work: () => Promise<T>): Promise<T> => {
+    const result = createRoomTail.then(work);
+    createRoomTail = result.catch(() => undefined);
+    return result;
+  };
+  const isActiveRoomHostConflict = (error: unknown): boolean =>
+    error instanceof Error && error.message.includes("UNIQUE constraint failed: rooms.host_user_id");
   const app = new Hono<{ Variables: Variables }>();
   const { injectWebSocket, upgradeWebSocket, wss } = createNodeWebSocket({
     app,
@@ -84,7 +93,7 @@ export async function createApp(deps: {
       origin:
         config.NODE_ENV === "development"
           ? (origin) => origin
-          : config.TRUSTED_ORIGINS.split(",").map((s) => s.trim()),
+          : trustedOrigins(config),
       allowHeaders: ["Content-Type", "Authorization"],
       exposeHeaders: ["set-auth-token", "X-Request-Id"],
       credentials: true,
@@ -173,31 +182,45 @@ export async function createApp(deps: {
     const uid = c.get("userId");
     if (!(await store.onboarded(uid))) throw new DomainError("ONBOARDING_REQUIRED", 409);
     limited(`create:${uid}`, 10, 3600000);
-    const existing = await store.activeOwnedRoom(uid);
-    if (existing) {
-      const result = await coordinators.run(existing.id, async (coord) => {
-        await coord.join(uid);
-        const navigation = await coord.navigation();
-        return {
-          room: await store.dto(existing.id, navigation),
-          inviteUrl: await invites.issue(existing.id, existing.inviteVersion),
-        };
-      });
-      return c.json(result, 200);
-    }
-    const id = await store.create(uid, body.name, {
-      everyoneCanControl: body.everyoneCanControl,
-      allowMembersToShareInvite: body.allowMembersToShareInvite,
-      media: body.media,
+    return runCreateSerial(async () => {
+      const existingResponse = async (existing: Awaited<ReturnType<Store["activeOwnedRoom"]>>) => {
+        if (!existing) throw new DomainError("ROOM_NOT_FOUND", 404);
+        const result = await coordinators.run(existing.id, async (coord) => {
+          await coord.join(uid);
+          const navigation = await coord.navigation();
+          return {
+            room: await store.dto(existing.id, navigation),
+            inviteUrl: await invites.issue(existing.id, existing.inviteVersion),
+          };
+        });
+        return c.json(result, 200);
+      };
+
+      const existing = await store.activeOwnedRoom(uid);
+      if (existing) return existingResponse(existing);
+
+      try {
+        const id = await store.create(uid, body.name, {
+          everyoneCanControl: body.everyoneCanControl,
+          allowMembersToShareInvite: body.allowMembersToShareInvite,
+          media: body.media,
+        });
+        const result = await coordinators.run(id, async (coord) => {
+          await coord.initializeMedia(body.media, uid, body.initialPlayback);
+          const navigation = await coord.navigation();
+          return {
+            room: await store.dto(id, navigation),
+            inviteUrl: await invites.issue(id, 1),
+          };
+        });
+        return c.json(result, 201);
+      } catch (error) {
+        if (!isActiveRoomHostConflict(error)) throw error;
+        const raced = await store.activeOwnedRoom(uid);
+        if (!raced) throw error;
+        return existingResponse(raced);
+      }
     });
-    await coordinators.run(id, async (coord) =>
-      coord.initializeMedia(body.media, uid, body.initialPlayback),
-    );
-    const navigation = await coordinators.run(id, (coord) => coord.navigation());
-    return c.json(
-      { room: await store.dto(id, navigation), inviteUrl: await invites.issue(id, 1) },
-      201,
-    );
   });
   const join = async (
     invite: string,

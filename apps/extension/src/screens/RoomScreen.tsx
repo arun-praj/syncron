@@ -9,8 +9,6 @@ import {
 
 import { InviteHintOverlay } from "@/features/room/InviteHintOverlay";
 import {
-  CameraMiniIcon,
-  CameraOffMiniIcon,
   ClipboardIcon,
   LeaveIcon,
   SettingsIcon,
@@ -45,6 +43,7 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   const forceLeaveReason = useRoomStore((s) => s.forceLeaveReason);
   const liveKit = useRoomStore((s) => s.liveKit);
   const liveKitReady = useRoomStore((s) => s.liveKitReady);
+  const activeGeneration = useRoomStore((s) => s.activeGeneration);
   const members = useRoomStore((s) => s.members);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [disbandParty, setDisbandParty] = useState(false);
@@ -77,9 +76,16 @@ export default function RoomScreen({ onBack, onLeave }: { onBack: () => void; on
   const autoTransferTarget = otherMembers.length === 1 ? otherMembers[0] : null;
 
   const leave = async (options?: { disband?: boolean; transferTo?: string }) => {
+    const generation = activeGeneration;
+    const roomId = identity.roomId;
     setIsLeaving(true);
     setLeaveError(null);
     const left = await leaveRoom(options);
+    const current = useRoomStore.getState();
+    // A successful leave clears identity and bumps the generation, so that
+    // normal completion must still reach onLeave(). Only suppress the old
+    // continuation when a replacement room is now visible.
+    if (current.identity && (current.activeGeneration !== generation || current.identity.roomId !== roomId)) return;
     setIsLeaving(false);
     if (!left) {
       setLeaveError("Couldn’t update the party. Please try again.");

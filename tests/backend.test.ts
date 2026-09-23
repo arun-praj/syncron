@@ -170,11 +170,18 @@ async function setup(overrides: Record<string, string> = {}) {
   };
 }
 
-test("development allows extension CORS origins while production restricts them", async () => {
+test("production trusts the configured extension origin while development remains open", async () => {
   const origin = "chrome-extension://development-extension";
-  const production = await setup();
+  const production = await setup({ EXTENSION_ID: "development-extension" });
   expect(
     (await production.request("/healthz", undefined, undefined, "OPTIONS", origin)).headers.get(
+      "access-control-allow-origin",
+    ),
+  ).toBe(origin);
+
+  const restricted = await setup();
+  expect(
+    (await restricted.request("/healthz", undefined, undefined, "OPTIONS", origin)).headers.get(
       "access-control-allow-origin",
     ),
   ).toBeNull();
@@ -594,7 +601,12 @@ test("coordinator handles permissions, sequence, seek coalescing, socket replace
   const ca = await coord.connect(a, x),
     cb = await coord.connect(b, y);
   expect(y.events.some((e) => e.type === "playback.no_state")).toBe(true);
-  await coord.receive(a, ca, event("playback.play", playback));
+  await coord.receive(a, ca, event("playback.media_change", {
+    ...playback,
+    paused: true,
+    muted: false,
+    volume: 1,
+  }));
   await coord.receive(
     a,
     ca,
@@ -630,11 +642,8 @@ test("coordinator handles permissions, sequence, seek coalescing, socket replace
   await coord.receive(b, cb, event("playback.rate_change", { position: 12, playbackRate: 1.25 }, 4));
   expect(x.events.at(-1)?.payload.playbackRate).toBe(1.25);
   await coord.receive(b, cb, event("playback.seek", { ...playback, position: 15 }, 5));
-  s.advance(51);
-  await coord.tick();
-  expect(x.events.at(-1)?.payload.position).toBe(15);
-  await coord.receive(b, cb, event("playback.pause", { ...playback, position: 15 }, 6));
-  expect(x.events.at(-1)?.payload.paused).toBe(true);
+  await coord.receive(b, cb, event("playback.pause", { ...playback, position: 5 }, 6));
+  expect(x.events.at(-1)?.payload).toMatchObject({ position: 15, paused: true });
   await coord.receive(
     a,
     ca,
@@ -705,6 +714,85 @@ test("initial playback and audio state are authoritative for joining clients", a
     }),
   );
   expect(client.events.at(-1)?.payload).toMatchObject({ muted: false, volume: 0.8 });
+});
+
+test("locks every media-bearing control to the persisted destination across restart", async () => {
+  const s = await setup();
+  const host = await s.seed("alice");
+  const persistedMedia = {
+    provider: "YOUTUBE",
+    mediaId: null,
+    url: "https://www.youtube.com/watch?v=abc&si=invite",
+  } as const;
+  const id = await s.store.create(host, undefined, { media: persistedMedia });
+  const coord = new MemoryRoomCoordinator(id, s.store, s.media, s.now);
+  await coord.recover();
+  const client = socket();
+  const connection = await coord.connect(host, client);
+
+  await coord.receive(
+    host,
+    connection,
+    event("playback.media_change", {
+      provider: "YOUTUBE",
+      mediaId: "different-video",
+      url: "https://www.youtube.com/watch?v=different-video",
+      position: 0,
+      paused: true,
+      muted: false,
+      volume: 1,
+    }),
+  );
+  expect(client.events.at(-1)?.payload).toMatchObject({ code: "NO_PLAYBACK_STATE" });
+
+  expect(clientEvent.safeParse(event("playback.play", {
+    provider: "YOUTUBE",
+    mediaId: "abc",
+    url: "https://www.youtube.com/watch?v=other",
+    position: 0,
+  })).success).toBe(false);
+  expect(clientEvent.safeParse(event("playback.play", {
+    provider: "YOUTUBE",
+    mediaId: "abc",
+    url: "https://evil.example/watch?v=abc",
+    position: 0,
+  })).success).toBe(false);
+  await coord.receive(host, connection, event("playback.play", {
+    provider: "YOUTUBE",
+    mediaId: null,
+    url: persistedMedia.url,
+    position: 0,
+  }, 2));
+  expect(client.events.at(-1)?.payload).toMatchObject({ code: "NO_PLAYBACK_STATE" });
+
+  const current = {
+    provider: "YOUTUBE",
+    mediaId: "abc",
+    url: "https://www.youtube.com/watch?v=abc&t=20",
+  };
+  await coord.receive(host, connection, event("playback.media_change", {
+    ...current,
+    position: 0,
+    paused: true,
+    muted: false,
+    volume: 1,
+  }, 3));
+  expect(client.events.at(-1)?.type).toBe("playback.state");
+
+  for (const [sequence, type] of [[4, "playback.play"], [5, "playback.pause"], [6, "playback.seek"]] as const) {
+    await coord.receive(host, connection, event(type, { ...current, position: sequence }, sequence));
+    expect(client.events.at(-1)?.type).toBe("playback.state");
+    expect(client.events.at(-1)?.payload).toMatchObject({ mediaId: "abc" });
+  }
+  s.advance(51);
+  await coord.tick();
+
+  const different = { ...current, mediaId: "different-video", url: "https://www.youtube.com/watch?v=different-video" };
+  for (const [sequence, type] of [[7, "playback.play"], [8, "playback.pause"], [9, "playback.seek"]] as const) {
+    await coord.receive(host, connection, event(type, { ...different, position: sequence }, sequence));
+    expect(client.events.at(-1)?.type).toBe("playback.state");
+    expect(client.events.at(-1)?.payload).toMatchObject({ mediaId: "abc", url: current.url });
+  }
 });
 
 test("capacity is 25 and concurrent coordinator joins cannot overbook", async () => {
@@ -919,6 +1007,18 @@ test("configuration rejects partial SMTP, OAuth and weak/shared secrets", () => 
   };
   expect(() => config({ ...env, GMAIL_HOST: "smtp.gmail.com" })).toThrow();
   expect(() => config({ ...env, SMTP_HOST: "mailpit" })).toThrow();
+  expect(() => config({ ...env, SMTP_USERNAME: "brevo-user" })).toThrow();
+  expect(() => config({ ...env, SMTP_PASSWORD: "brevo-password" })).toThrow();
+  expect(
+    config({
+      ...env,
+      SMTP_HOST: "smtp-relay.brevo.com",
+      SMTP_PORT: "587",
+      SMTP_USERNAME: "brevo-user",
+      SMTP_PASSWORD: "brevo-password",
+      SMTP_SENDER: "sender@example.com",
+    }),
+  ).toMatchObject({ SMTP_USERNAME: "brevo-user", SMTP_PASSWORD: "brevo-password" });
   expect(() => config({ ...env, GOOGLE_CLIENT_ID: "id" })).toThrow();
   expect(() =>
     config({ ...env, INVITE_SECRET: env.BETTER_AUTH_SECRET }),
@@ -1060,6 +1160,111 @@ test("host can transfer ownership to the selected member before leaving", async 
   expect(await s.store.member(id, host)).toBeUndefined();
 });
 
+test("host transfer rejects a member already hosting another active room", async () => {
+  const s = await setup();
+  const host = await s.seed("alice");
+  const selected = await s.seed("bobby");
+  const id = await s.store.create(host);
+  const otherId = await s.store.create(selected);
+  const coord = new MemoryRoomCoordinator(id, s.store, s.media, s.now);
+  await coord.recover();
+  await coord.join(selected);
+  await coord.connect(host, socket());
+  await coord.connect(selected, socket());
+
+  await expect(coord.transfer(selected)).rejects.toMatchObject({
+    code: "INVALID_HOST_TRANSFER",
+    status: 409,
+  });
+  expect((await s.store.room(id)).hostUserId).toBe(host);
+  expect((await s.store.room(otherId)).hostUserId).toBe(selected);
+  expect((await s.store.member(id, host))?.role).toBe("HOST");
+  expect((await s.store.member(id, selected))?.role).toBe("MEMBER");
+});
+
+test("moderation transfer reports the active-host conflict as a 409", async () => {
+  const s = await setup();
+  const host = await s.login();
+  const selected = await s.login("bobby@example.com");
+  const first = await (await s.request("/api/v1/rooms", { name: "first", media: roomMedia }, host.token)).json();
+  const second = await (await s.request("/api/v1/rooms", { name: "second", media: roomMedia }, selected.token)).json();
+  await s.request(
+    "/api/v1/rooms/join",
+    { invite: new URL(first.inviteUrl).hash.slice(8) },
+    selected.token,
+  );
+  await s.coordinators.run(first.room.id, (coord) => coord.connect(host.id, socket()));
+  await s.coordinators.run(first.room.id, (coord) => coord.connect(selected.id, socket()));
+
+  const response = await s.request(
+    `/api/v1/rooms/${first.room.id}/transfer-host`,
+    { userId: selected.id },
+    host.token,
+  );
+  expect(response.status).toBe(409);
+  expect((await response.json()).error.code).toBe("INVALID_HOST_TRANSFER");
+  expect((await s.store.room(first.room.id)).hostUserId).toBe(host.id);
+  expect((await s.store.room(second.room.id)).hostUserId).toBe(selected.id);
+});
+
+test("automatic failover skips conflicting hosts and ends when none are eligible", async () => {
+  const s = await setup();
+  const host = await s.seed("alice");
+  const conflicting = await s.seed("bobby");
+  const eligible = await s.seed("casey");
+  const id = await s.store.create(host);
+  const conflictingRoom = await s.store.create(conflicting);
+  const coord = new MemoryRoomCoordinator(id, s.store, s.media, s.now);
+  await coord.recover();
+  await coord.join(conflicting);
+  await coord.join(eligible);
+  await coord.connect(host, socket());
+  await coord.connect(conflicting, socket());
+  await coord.connect(eligible, socket());
+
+  await coord.leave(host);
+
+  expect((await s.store.room(id)).hostUserId).toBe(eligible);
+  expect((await s.store.room(id)).status).toBe("ACTIVE");
+  expect((await s.store.room(conflictingRoom)).hostUserId).toBe(conflicting);
+
+  const noFallbackHost = await s.seed("dana");
+  const noFallbackId = await s.store.create(noFallbackHost);
+  const noFallback = new MemoryRoomCoordinator(noFallbackId, s.store, s.media, s.now);
+  await noFallback.recover();
+  await noFallback.join(conflicting);
+  await noFallback.connect(noFallbackHost, socket());
+  await noFallback.connect(conflicting, socket());
+
+  await noFallback.leave(noFallbackHost);
+
+  expect((await s.store.room(noFallbackId)).status).toBe("ENDED");
+  expect(await s.store.active(noFallbackId)).toHaveLength(0);
+  expect((await s.store.room(conflictingRoom)).hostUserId).toBe(conflicting);
+});
+
+test("automatic timeout failover ends when the only connected member hosts another room", async () => {
+  const s = await setup();
+  const host = await s.seed("alice");
+  const conflicting = await s.seed("bobby");
+  const id = await s.store.create(host);
+  const conflictingRoom = await s.store.create(conflicting);
+  const coord = new MemoryRoomCoordinator(id, s.store, s.media, s.now);
+  await coord.recover();
+  await coord.join(conflicting);
+  const hostConnection = await coord.connect(host, socket());
+  const memberConnection = await coord.connect(conflicting, socket());
+  await coord.disconnect(host, hostConnection);
+  s.advance(30001);
+  await coord.receive(conflicting, memberConnection, event("client.ping", { clientTime: s.now() }));
+
+  await coord.tick();
+
+  expect((await s.store.room(id)).status).toBe("ENDED");
+  expect(await s.store.active(id)).toHaveLength(0);
+  expect((await s.store.room(conflictingRoom)).hostUserId).toBe(conflicting);
+});
+
 test("host disband marks the room ended and removes every member", async () => {
   const s = await setup();
   const host = await s.seed("alice");
@@ -1075,6 +1280,51 @@ test("host disband marks the room ended and removes every member", async () => {
 
   expect((await s.store.room(id)).status).toBe("ENDED");
   expect(await s.store.active(id)).toHaveLength(0);
+});
+
+test("concurrent room creation returns one initialized room", async () => {
+  const s = await setup();
+  const host = await s.login();
+  const first = {
+    name: "First click",
+    media: roomMedia,
+    initialPlayback: {
+      position: 12.5,
+      paused: true,
+      playbackRate: 1,
+      muted: true,
+      volume: 0.4,
+    },
+  };
+  const second = {
+    name: "Second click",
+    media: roomMedia,
+    initialPlayback: {
+      position: 77,
+      paused: false,
+      playbackRate: 1.25,
+      muted: false,
+      volume: 0.8,
+    },
+  };
+
+  const responses = await Promise.all([
+    s.request("/api/v1/rooms", first, host.token),
+    s.request("/api/v1/rooms", second, host.token),
+  ]);
+  expect(responses.map((response) => response.status).sort()).toEqual([200, 201]);
+  const bodies = await Promise.all(responses.map((response) => response.json()));
+  expect(bodies[0].room.id).toBe(bodies[1].room.id);
+  expect(bodies[0].room.hasPlaybackState).toBe(true);
+  expect(bodies[1].room.hasPlaybackState).toBe(true);
+  expect(await s.store.active(bodies[0].room.id)).toHaveLength(1);
+  const winnerIndex = responses.findIndex((response) => response.status === 201);
+  const winnerInput = [first, second][winnerIndex]!;
+  const initial = socket();
+  await s.coordinators.run(bodies[0].room.id, (coord) => coord.connect(host.id, initial));
+  expect(initial.events.find((event) => event.type === "playback.state")?.payload).toMatchObject(
+    winnerInput.initialPlayback,
+  );
 });
 
 test("wrong-room invites, nonmember tokens, request validation and OTP send quota", async () => {

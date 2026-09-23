@@ -46,9 +46,10 @@ export default function LoginScreen({
               onSubmit={async (e) => {
                 e.preventDefault();
                 clearError();
-                await requestPasswordReset(resetEmail);
-                setResetSent(true);
-                setStep("reset");
+                if (await requestPasswordReset(resetEmail)) {
+                  setResetSent(true);
+                  setStep("reset");
+                }
               }}>
               <Input
                 type="email"
@@ -71,12 +72,13 @@ export default function LoginScreen({
               error={error}
               onResend={async () => {
                 clearError();
-                await requestPasswordReset(resetEmail);
+                if (await requestPasswordReset(resetEmail)) setResetSent(true);
               }}
               onSubmit={async (otp, password) => {
                 clearError();
-                await resetPassword({ email: resetEmail, otp, password });
-                setStep("sign-in");
+                if (await resetPassword({ email: resetEmail, otp, password })) {
+                  setStep("sign-in");
+                }
               }}
             />
           )}

@@ -12,6 +12,7 @@ import {
   getStoredToken,
 } from "~/services/auth/client";
 import { api, ApiError } from "~/services/api/client";
+import { useRoomStore } from "~/stores/room-store";
 
 export type AuthStatus =
   | "loading"
@@ -52,8 +53,8 @@ interface AuthState {
   updateProfile: (input: z.infer<typeof profileUpdateSchema>) => Promise<void>;
   signOut: () => Promise<void>;
   changePassword: (input: { currentPassword: string; newPassword: string }) => Promise<boolean>;
-  requestPasswordReset: (email: string) => Promise<void>;
-  resetPassword: (input: { email: string; otp: string; password: string }) => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<boolean>;
+  resetPassword: (input: { email: string; otp: string; password: string }) => Promise<boolean>;
   clearError: () => void;
   backToSignIn: () => void;
 }
@@ -69,6 +70,17 @@ interface AuthState {
 let pendingPassword: string | null = null;
 let pendingSignup = false;
 let authRevision = 0;
+
+function clearLocalRoom(reason: string): void {
+  if (useRoomStore.getState().identity) useRoomStore.getState().forceLeave(reason);
+}
+
+function clearAuthenticatedRoomIfChanged(currentUser: SyncronUser | null, nextUser: SyncronUser): void {
+  const room = useRoomStore.getState().identity;
+  if ((currentUser && currentUser.id !== nextUser.id) || (room && room.selfUserId !== nextUser.id)) {
+    clearLocalRoom("Your account changed. Rejoin the party from the new account.");
+  }
+}
 
 function statusFor(user: SyncronUser): AuthStatus {
   return user.onboardingCompletedAt ? "ready" : "needs-onboarding";
@@ -91,20 +103,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   hydrate: async () => {
     if (get().isSubmitting) return;
-    const revision = authRevision;
+    const revision = ++authRevision;
     const token = await getStoredToken();
     if (!token) {
-      if (revision === authRevision) set({ status: "signed-out" });
+      if (revision !== authRevision) return;
+      clearLocalRoom("Your Syncron session ended.");
+      if (get().user) {
+        set({ status: "signed-out", user: null, pendingEmail: null, error: null, info: null });
+      } else {
+        set({ status: "signed-out" });
+      }
       return;
     }
     try {
       const { user } = await api.me();
-      if (revision === authRevision) set({ status: statusFor(user), user, error: null });
+      if (revision !== authRevision || await getStoredToken() !== token) return;
+      clearAuthenticatedRoomIfChanged(get().user, user);
+      set({ status: statusFor(user), user, error: null });
     } catch (error) {
       if (revision !== authRevision) return;
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        if (await getStoredToken() !== token || revision !== authRevision) return;
         await clearStoredSession();
-        if (revision === authRevision) set({ status: "signed-out", user: null });
+        if (revision === authRevision) {
+          clearLocalRoom("Your Syncron session ended.");
+          set({ status: "signed-out", user: null, pendingEmail: null, error: null, info: null });
+        }
         return;
       }
       set({
@@ -152,6 +176,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     try {
       const { user } = await api.me();
+      clearAuthenticatedRoomIfChanged(get().user, user);
       set({
         isSubmitting: false,
         status: statusFor(user),
@@ -196,6 +221,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     try {
       const { user } = await api.me();
+      clearAuthenticatedRoomIfChanged(get().user, user);
       set({
         isSubmitting: false,
         status: statusFor(user),
@@ -259,17 +285,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await authClient.signOut();
     } finally {
-      await clearStoredSession();
-      pendingPassword = null;
-      pendingSignup = false;
-      set({
-        isSubmitting: false,
-        status: "signed-out",
-        user: null,
-        pendingEmail: null,
-        error: null,
-        info: null,
-      });
+      clearLocalRoom("Your Syncron session ended.");
+      try {
+        await clearStoredSession();
+      } finally {
+        pendingPassword = null;
+        pendingSignup = false;
+        set({
+          isSubmitting: false,
+          status: "signed-out",
+          user: null,
+          pendingEmail: null,
+          error: null,
+          info: null,
+        });
+      }
     }
   },
 
@@ -294,22 +324,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // sign in with their new password rather than trying to re-hydrate.
   requestPasswordReset: async (email) => {
     set({ isSubmitting: true, error: null, info: null });
-    const { error } = await authClient.emailOtp.requestPasswordReset({ email });
-    set({
-      isSubmitting: false,
-      error: error ? authErrorMessage(error) : null,
-      info: error ? null : "We sent a password reset code.",
-    });
+    try {
+      const { error } = await authClient.emailOtp.requestPasswordReset({ email });
+      if (error) {
+        set({ isSubmitting: false, error: authErrorMessage(error), info: null });
+        return false;
+      }
+      set({ isSubmitting: false, error: null, info: "We sent a password reset code." });
+      return true;
+    } catch {
+      set({ isSubmitting: false, error: authErrorMessage(null), info: null });
+      return false;
+    }
   },
 
   resetPassword: async ({ email, otp, password }) => {
     set({ isSubmitting: true, error: null, info: null });
-    const { error } = await authClient.emailOtp.resetPassword({ email, otp, password });
-    set({ isSubmitting: false });
-    if (error) {
-      set({ error: authErrorMessage(error) });
-      return;
+    try {
+      const { error } = await authClient.emailOtp.resetPassword({ email, otp, password });
+      if (error) {
+        set({ isSubmitting: false, error: authErrorMessage(error) });
+        return false;
+      }
+      set({
+        isSubmitting: false,
+        status: "signed-out",
+        info: "Password updated. Sign in with your new password.",
+      });
+      return true;
+    } catch {
+      set({ isSubmitting: false, error: authErrorMessage(null) });
+      return false;
     }
-    set({ status: "signed-out", info: "Password updated. Sign in with your new password." });
   },
 }));

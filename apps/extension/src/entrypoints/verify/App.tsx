@@ -49,7 +49,16 @@ export default function App() {
         <SignupScreen onSwitchToLogin={() => setAuthView("login")} />
       )
     );
-  } else {
+  } else if (status === "unavailable") {
+    content = (
+      <div className="flex h-screen flex-col items-center justify-center px-8 text-center text-subtext text-ink-secondary">
+        <p>Couldn’t verify your session.</p>
+        <button type="button" onClick={() => void hydrate()} className="mt-3 text-accent hover:underline">
+          Try again
+        </button>
+      </div>
+    );
+  } else if (status === "ready") {
     content = (
       <div className="flex min-h-screen flex-col items-center px-[22px] pb-[18px] pt-[26px] text-center">
         <h1 className="mb-2 text-h1 font-bold text-ink-primary">{info ?? "Sign in success"}</h1>

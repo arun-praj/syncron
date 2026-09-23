@@ -26,10 +26,16 @@ Better Auth is mounted at /api/auth/*. Its authenticated `POST /api/auth/change-
 | PATCH /rooms/:roomId/settings | {everyoneCanControl:boolean} | {room} | active host |
 | GET /rooms/:roomId/members | — | {members} | active member |
 | POST /rooms/:roomId/kick | {userId} | 204 | active host; not self |
-| POST /rooms/:roomId/transfer-host | {userId} | {host} | active host; connected target |
+| POST /rooms/:roomId/transfer-host | {userId} | {host} | active host; connected active member who does not host another active room |
 | POST /rooms/:roomId/ws-ticket | {} | {ticket,expiresAt} | active member |
 | POST /rooms/:roomId/livekit-token | {} | {url,token,roomName,participantIdentity} | active member |
 | PATCH /rooms/:roomId/members/:userId/microphone | {allowed:boolean} | {allowed} | active host |
+
+`POST /rooms/:roomId/transfer-host` returns `409 INVALID_HOST_TRANSFER` and
+leaves the room unchanged when the target is not a connected active member or
+already hosts another active room.
+
+Media destinations are strict. YouTube destinations must use an HTTPS `youtube.com` or `www.youtube.com` URL with a `/watch?v=` video path. The URL must identify a video, and a non-null `mediaId` must match that URL identifier; a null YouTube `mediaId` is allowed when the URL provides the identifier.
 
 Only one `ACTIVE` room may have a given current host. Repeating `POST /rooms` while that room is active is idempotent and returns that room instead of creating another one. A former creator who voluntarily leaves may start a new room while the previous room continues under its transferred host; the previous-room endpoint and rejoin route make that choice explicit.
 
@@ -134,9 +140,13 @@ Same payload fields as `playback.play`.
   "position": 2011.82,
   "provider": "YOUTUBE",
   "mediaId": "dQw4w9WgXcQ",
-  "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  "paused": false
 }
 ```
+
+`paused` is optional for compatibility with older clients. When present, it
+preserves the host's play/pause intent while the provider completes its seek.
 
 ### `playback.rate_change`
 
@@ -312,8 +322,8 @@ Sent to target before disconnect when possible.
 
 ## Precise realtime rules
 
-Client sequence is strictly increasing per socket; stale values produce STALE_SEQUENCE. All events require active membership. Controls require host or everyoneCanControl. Invalid payloads produce protocol.error VALIDATION_ERROR; controls over 30/sec sustained, burst 60 produce RATE_LIMITED. Send client.ping at least every 15 seconds; 30 seconds without an event closes the socket. Replacing a socket cannot disconnect its replacement. Seek broadcasts are coalesced to the latest accepted state over 50ms; another control flushes the pending seek first. Initial connection automatically receives state/no_state. Playback positions must be finite and nonnegative, rates 0.25–4, volumes 0–1, http(s) URLs at most 2048 characters, titles at most 200. Buffering is informational and returns playback.buffering with userId, buffering and position. Rate and audio changes before initial media produce NO_PLAYBACK_STATE. A host receiving playback.no_state after a coordinator restart republishes its current full playback snapshot; members wait for that state.
+Client sequence is strictly increasing per socket; stale values produce STALE_SEQUENCE. All events require active membership. Controls require host or everyoneCanControl. Invalid payloads produce protocol.error VALIDATION_ERROR; controls over 30/sec sustained, burst 60 produce RATE_LIMITED. Send client.ping at least every 15 seconds; 30 seconds without an event closes the socket. Replacing a socket cannot disconnect its replacement. Seek broadcasts are coalesced to the latest accepted state over 50ms; another control flushes the pending seek first. Initial connection automatically receives state/no_state. Playback positions must be finite and nonnegative, rates 0.25–4, volumes 0–1, http(s) URLs at most 2048 characters, titles at most 200. Buffering is informational and returns playback.buffering with userId, buffering and position. Play, pause and seek before initial playback state produce NO_PLAYBACK_STATE; `playback.media_change` is the initialization/recovery event and must use the locked destination. Rate and audio changes before initial media produce NO_PLAYBACK_STATE. A host receiving playback.no_state after a coordinator restart republishes its current full playback snapshot; members wait for that state.
 
-Disconnected members retain their active membership and reserve capacity for a 30-second reconnect grace period. Reconnecting within that grace reuses the active membership; otherwise it closes with `DISCONNECTED_TIMEOUT`. Playback and presence remain transient; a server restart may lose playback state, but it does not end the persisted active room. After a disconnected host's grace expires, a random connected participant becomes host; if none is connected, the room ends. Explicit host leave transfers immediately to a random connected member, or ends the room when none is connected. The `room.host_changed` event is shown to the new host as `You are now the host` and to other members as a system chat notification naming the new host. Repeated leave requests are safe. Ending closes memberships with `ROOM_ENDED` and destroys transient state.
+Disconnected members retain their active membership and reserve capacity for a 30-second reconnect grace period. Reconnecting within that grace reuses the active membership; otherwise it closes with `DISCONNECTED_TIMEOUT`. Playback and presence remain transient; a server restart may lose playback state, but it does not end the persisted active room. After a disconnected host's grace expires, a random connected active member who does not host another active room becomes host; if no eligible member is connected, the room ends. Explicit host leave transfers immediately to a random eligible connected member, or ends the room when none is eligible. The `room.host_changed` event is shown to the new host as `You are now the host` and to other members as a system chat notification naming the new host. Repeated leave requests are safe. Ending closes memberships with `ROOM_ENDED` and destroys transient state.
 
 LiveKit tokens expire in 600 seconds; roomName=sync_<roomId>, identity=Better Auth user ID. Grants: join, subscribe, data, camera and microphone publishing. Kick removes the participant; end deletes the LiveKit room. Chat travels only through LiveKit.

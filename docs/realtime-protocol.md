@@ -35,9 +35,17 @@ The server validates:
 - payload schema,
 - reasonable numeric bounds.
 
+Seek events may include the sender's intended `paused` state. This optional
+field prevents provider-generated pause events during a seek from changing the
+authoritative play/pause state.
+
 A `playback.media_change` for a different media destination is rejected and
 the sender receives the current authoritative state. Same-media snapshots are
 still accepted for reconnect/recovery compatibility.
+
+When no transient playback state exists, `playback.media_change` is the only
+event that can initialize or recover playback; play, pause and seek receive
+`NO_PLAYBACK_STATE` until a complete snapshot exists.
 
 ## 4. Drift strategy
 
@@ -114,12 +122,14 @@ On unexpected member control-channel disconnect:
 - otherwise close its active membership with `DISCONNECTED_TIMEOUT`.
 
 For a disconnected host, after the grace timer expires select a random
-connected active member, persist new `host_user_id` and role changes, and
-broadcast `room.host_changed`. If no member is connected, end the room. An
-explicit host leave may either disband the room or transfer ownership to the
-selected connected member; with no explicit choice it transfers immediately to
-a random connected member (the only remaining member in a two-person room) or
-ends the room when none is connected.
+connected active member who does not host another active room, persist new
+`host_user_id` and role changes, and broadcast `room.host_changed`. If no
+eligible member is connected, end the room. An explicit host leave may either
+disband the room or transfer ownership to the selected connected eligible
+member; with no explicit choice it transfers immediately to a random eligible
+connected member (the only remaining member in a two-person room when eligible)
+or ends the room when none is eligible. Explicit transfer to a target that
+already hosts another active room returns `INVALID_HOST_TRANSFER` (409).
 
 ## 10. Session termination
 

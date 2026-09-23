@@ -46,6 +46,7 @@ const request = async (path: string, body?: unknown, token?: string) => {
     method: body ? "POST" : "GET",
     headers: {
       "content-type": "application/json",
+      origin: "http://localhost:8000",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,

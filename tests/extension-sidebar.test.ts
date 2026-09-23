@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isActivateYoutubeSidebarMessage,
+  isAllowedYoutubeApiRequest,
   isOpenYoutubeSidebarMessage,
   isOpenServiceTabMessage,
   isSyncronJoinInviteMessage,
@@ -81,5 +82,46 @@ describe("extension sidebar messages", () => {
   it("accepts only a numeric current-tab sidebar request", () => {
     expect(isOpenYoutubeSidebarMessage({ type: "syncron:open-youtube-sidebar", tabId: 12 })).toBe(true);
     expect(isOpenYoutubeSidebarMessage({ type: "syncron:open-youtube-sidebar", tabId: "12" })).toBe(false);
+  });
+
+  it("bounds internal YouTube API proxy routes to the API path", () => {
+    expect(isAllowedYoutubeApiRequest({
+      type: "syncron:youtube-api-request",
+      path: "/api/v1/rooms/018f3f8b-1a24-7abc-8def-0123456789ab/members",
+      method: "GET",
+    })).toBe(true);
+    expect(isAllowedYoutubeApiRequest({
+      type: "syncron:youtube-api-request",
+      path: "/api/v1/rooms/018f3f8b-1a24-7abc-8def-0123456789ab/settings",
+      method: "PATCH",
+      body: "{\"everyoneCanControl\":true}",
+    })).toBe(true);
+    expect(isAllowedYoutubeApiRequest({
+      type: "syncron:youtube-api-request",
+      path: "/api/v1/rooms/018f3f8b-1a24-7abc-8def-0123456789ab/leave",
+      method: "POST",
+      body: "{}",
+    })).toBe(true);
+    expect(isAllowedYoutubeApiRequest({
+      type: "syncron:youtube-api-request",
+      path: "https://evil.example/steal",
+      method: "GET",
+    })).toBe(false);
+    expect(isAllowedYoutubeApiRequest({
+      type: "syncron:youtube-api-request",
+      path: "/api/v1/rooms/018f3f8b-1a24-7abc-8def-0123456789ab/members",
+      method: "POST",
+      body: "{}",
+    })).toBe(false);
+    expect(isAllowedYoutubeApiRequest({
+      type: "syncron:youtube-api-request",
+      path: "/api/v1/rooms/018f3f8b-1a24-7abc-8def-0123456789ab/../me",
+      method: "GET",
+    })).toBe(false);
+    expect(isAllowedYoutubeApiRequest({
+      type: "syncron:youtube-api-request",
+      path: "/api/v1/me?redirect=https://evil.example",
+      method: "GET",
+    })).toBe(false);
   });
 });
